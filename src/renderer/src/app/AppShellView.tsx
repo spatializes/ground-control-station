@@ -115,9 +115,7 @@ export function AppShellView({
 
       <header className="app-header">
         <div className="brand-block">
-          <span className="eyebrow">Ground Control</span>
           <h1>Ground Control Station</h1>
-          <p>Replay-first mission telemetry viewer</p>
         </div>
 
         <div className="header-actions">

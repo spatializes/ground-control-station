@@ -25,7 +25,7 @@ export function CesiumScene({ frame, cameraLocked, wind }: CesiumSceneProps) {
   )
 
   const aircraft = useAircraftEntity(viewer, frame)
-  useCameraLock(viewer, aircraft, cameraLocked)
+  useCameraLock(viewer, aircraft, cameraLocked, frame)
   useWindLayer(viewer, frame, wind)
 
   useEffect(() => {

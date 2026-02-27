@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Cartesian3,
   ConstantPositionProperty,
@@ -13,12 +13,15 @@ import { toCesiumOrientation } from '../../lib/telemetry/toCesiumOrientation'
 
 export function useAircraftEntity(viewer: Viewer | null, frame: TelemetryFrame | null): Entity | null {
   const [entity, setEntity] = useState<Entity | null>(null)
+  const hasInitialFrameFocusRef = useRef(false)
 
   useEffect(() => {
     if (!viewer) {
       setEntity(null)
       return
     }
+
+    hasInitialFrameFocusRef.current = false
 
     const aircraft = viewer.entities.add({
       name: 'Aircraft',
@@ -28,7 +31,8 @@ export function useAircraftEntity(viewer: Viewer | null, frame: TelemetryFrame |
         minimumPixelSize: 110,
         maximumScale: 320,
         scale: 2.1
-      }
+      },
+      viewFrom: new ConstantProperty(new Cartesian3(-520, -120, 260))
     })
 
     setEntity(aircraft)
@@ -55,17 +59,21 @@ export function useAircraftEntity(viewer: Viewer | null, frame: TelemetryFrame |
       return
     }
 
-    if (viewer.camera.positionCartographic.height > 200000) {
-      viewer.camera.flyTo({
-        destination: Cartesian3.fromDegrees(frame.longitudeDeg, frame.latitudeDeg, Math.max(350, frame.altitudeM + 900)),
-        orientation: {
-          heading: CesiumMath.toRadians(frame.yawDeg),
-          pitch: CesiumMath.toRadians(-25),
-          roll: 0
-        },
-        duration: 0.6
-      })
+    if (hasInitialFrameFocusRef.current) {
+      return
     }
+
+    viewer.camera.flyTo({
+      destination: Cartesian3.fromDegrees(frame.longitudeDeg, frame.latitudeDeg, Math.max(350, frame.altitudeM + 900)),
+      orientation: {
+        heading: CesiumMath.toRadians(frame.yawDeg),
+        pitch: CesiumMath.toRadians(-25),
+        roll: 0
+      },
+      duration: 0.6
+    })
+
+    hasInitialFrameFocusRef.current = true
   }, [viewer, frame])
 
   return entity
