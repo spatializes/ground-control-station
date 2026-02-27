@@ -1,6 +1,5 @@
-import type { ConnectionStatus, SerialPortInfo, TelemetryFrame, TelemetryMode, ThemeMode, WindConfig } from '@shared/types'
+import type { ConnectionStatus, DataSourceKind, SerialPortInfo, TelemetryFrame, ThemeMode, WindConfig } from '@shared/types'
 import { CesiumScene } from '../cesium/CesiumScene'
-import { ModeToggle } from '../components/controls/ModeToggle'
 import { PlaybackBar } from '../components/controls/PlaybackBar'
 import { ThemeToggle } from '../components/controls/ThemeToggle'
 import { HudOverlay } from '../components/hud/HudOverlay'
@@ -17,18 +16,23 @@ interface AppShellViewProps {
   replayProgress: number
   isPlaying: boolean
   speedMultiplier: number
-  mode: TelemetryMode
+  activeSource: DataSourceKind
+  selectedSource: DataSourceKind
   cameraLocked: boolean
   theme: ThemeMode
+  isConnectionPanelOpen: boolean
   wind: WindConfig
   connectionStatus: ConnectionStatus
   serialPorts: SerialPortInfo[]
   serialPath: string
   serialBaudRate: number
   websocketUrl: string
-  onModeChange: (mode: TelemetryMode) => void
+  onSelectedSourceChange: (source: DataSourceKind) => void
+  onActivateSource: () => void
   onThemeChange: (theme: ThemeMode) => void
   onCameraLockToggle: () => void
+  onConnectionPanelToggle: () => void
+  onConnectionPanelClose: () => void
   onTogglePlay: () => void
   onSeekReplay: (progress: number) => void
   onSpeedChange: (speed: number) => void
@@ -36,9 +40,19 @@ interface AppShellViewProps {
   onSerialPathChange: (path: string) => void
   onSerialBaudRateChange: (baudRate: number) => void
   onWebSocketUrlChange: (url: string) => void
-  onConnectSerial: () => void
-  onConnectWebSocket: () => void
   onDisconnectLive: () => void
+}
+
+function sourceLabel(source: DataSourceKind): string {
+  if (source === 'csv') {
+    return 'CSV Playback'
+  }
+
+  if (source === 'serial') {
+    return 'Serial MAVLink'
+  }
+
+  return 'WebSocket MAVLink'
 }
 
 export function AppShellView({
@@ -51,18 +65,23 @@ export function AppShellView({
   replayProgress,
   isPlaying,
   speedMultiplier,
-  mode,
+  activeSource,
+  selectedSource,
   cameraLocked,
   theme,
+  isConnectionPanelOpen,
   wind,
   connectionStatus,
   serialPorts,
   serialPath,
   serialBaudRate,
   websocketUrl,
-  onModeChange,
+  onSelectedSourceChange,
+  onActivateSource,
   onThemeChange,
   onCameraLockToggle,
+  onConnectionPanelToggle,
+  onConnectionPanelClose,
   onTogglePlay,
   onSeekReplay,
   onSpeedChange,
@@ -70,8 +89,6 @@ export function AppShellView({
   onSerialPathChange,
   onSerialBaudRateChange,
   onWebSocketUrlChange,
-  onConnectSerial,
-  onConnectWebSocket,
   onDisconnectLive
 }: AppShellViewProps) {
   if (loadState === 'loading' || loadState === 'idle') {
@@ -104,8 +121,11 @@ export function AppShellView({
         </div>
 
         <div className="header-actions">
-          <ModeToggle mode={mode} onModeChange={onModeChange} />
           <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
+          <button type="button" className="ghost-btn source-btn" onClick={onConnectionPanelToggle}>
+            {isConnectionPanelOpen ? 'Hide Data Source' : 'Data Source'}
+            <span className={`status-pill status-${connectionStatus.state}`}>{sourceLabel(activeSource)}</span>
+          </button>
           <button type="button" className="ghost-btn" onClick={onCameraLockToggle}>
             {cameraLocked ? 'Unlock Camera' : 'Lock Camera'}
           </button>
@@ -117,25 +137,30 @@ export function AppShellView({
 
       <HudOverlay frame={frame} />
 
-      <ConnectionPanel
-        status={connectionStatus}
-        serialPorts={serialPorts}
-        serialPath={serialPath}
-        serialBaudRate={serialBaudRate}
-        websocketUrl={websocketUrl}
-        onRefreshSerialPorts={onRefreshSerialPorts}
-        onSerialPathChange={onSerialPathChange}
-        onSerialBaudRateChange={onSerialBaudRateChange}
-        onWebSocketUrlChange={onWebSocketUrlChange}
-        onConnectSerial={onConnectSerial}
-        onConnectWebSocket={onConnectWebSocket}
-        onDisconnect={onDisconnectLive}
-      />
+      {isConnectionPanelOpen ? (
+        <ConnectionPanel
+          status={connectionStatus}
+          activeSource={activeSource}
+          selectedSource={selectedSource}
+          serialPorts={serialPorts}
+          serialPath={serialPath}
+          serialBaudRate={serialBaudRate}
+          websocketUrl={websocketUrl}
+          onSelectedSourceChange={onSelectedSourceChange}
+          onRefreshSerialPorts={onRefreshSerialPorts}
+          onSerialPathChange={onSerialPathChange}
+          onSerialBaudRateChange={onSerialBaudRateChange}
+          onWebSocketUrlChange={onWebSocketUrlChange}
+          onActivateSource={onActivateSource}
+          onDisconnectLive={onDisconnectLive}
+          onClose={onConnectionPanelClose}
+        />
+      ) : null}
 
       <footer className="bottom-stack">
         <PlaybackBar
           isPlaying={isPlaying}
-          mode={mode}
+          activeSource={activeSource}
           progress={replayProgress}
           currentTimeMs={replayDurationMs * replayProgress}
           durationMs={replayDurationMs}

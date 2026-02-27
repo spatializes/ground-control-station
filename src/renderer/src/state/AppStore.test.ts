@@ -55,4 +55,19 @@ describe('AppStore playback integration', () => {
     expect(store.playback.cursorMs).toBeCloseTo(750)
     expect(store.currentReplayIndex).toBe(0)
   })
+
+  it('only allows replay playback when CSV is active source', () => {
+    const store = new AppStore({ api: null })
+    store.setReplayFrames(FRAMES)
+
+    store.setSelectedSource('serial')
+    store.setActiveSource('serial')
+    store.playReplay()
+    expect(store.playback.isPlaying).toBe(false)
+
+    store.setSelectedSource('csv')
+    store.setActiveSource('csv')
+    store.playReplay()
+    expect(store.playback.isPlaying).toBe(true)
+  })
 })

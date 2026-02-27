@@ -1,5 +1,6 @@
 export type TelemetryMode = 'replay' | 'live'
 export type ThemeMode = 'light' | 'dark'
+export type DataSourceKind = 'csv' | 'serial' | 'websocket'
 
 export interface TelemetryFrame {
   timestampMs: number

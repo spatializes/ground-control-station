@@ -159,6 +159,16 @@ select:focus-visible {
   font-size: 0.83rem;
 }
 
+.source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-segmented {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .hud-overlay {
   position: absolute;
   top: 140px;
@@ -242,6 +252,12 @@ select:focus-visible {
   gap: 12px;
 }
 
+.panel-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .panel-header h2,
 .connection-section h3 {
   margin: 0;
@@ -259,9 +275,15 @@ select:focus-visible {
   padding: 5px 8px;
   border-radius: 999px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   font-size: 0.72rem;
   font-weight: 700;
+  white-space: nowrap;
+}
+
+.source-pill {
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .status-disconnected {
@@ -308,6 +330,17 @@ select:focus-visible {
   border: 1px solid var(--line);
   background: transparent;
   padding: 8px;
+}
+
+.panel-close-btn {
+  padding: 6px 10px;
+}
+
+.panel-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
 }
 
 .bottom-stack {

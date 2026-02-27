@@ -6,7 +6,7 @@ export function usePlaybackClock(store: AppStore): void {
   const lastTickRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!store.playback.isPlaying || store.ui.mode !== 'replay') {
+    if (!store.playback.isPlaying || store.ui.activeSource !== 'csv') {
       if (frameIdRef.current !== null) {
         cancelAnimationFrame(frameIdRef.current)
         frameIdRef.current = null
@@ -36,5 +36,5 @@ export function usePlaybackClock(store: AppStore): void {
       }
       lastTickRef.current = null
     }
-  }, [store, store.playback.isPlaying, store.ui.mode])
+  }, [store, store.playback.isPlaying, store.ui.activeSource])
 }

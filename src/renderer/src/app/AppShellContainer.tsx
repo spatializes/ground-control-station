@@ -31,18 +31,23 @@ export const AppShellContainer = observer(function AppShellContainer() {
       replayProgress={store.replayProgress}
       isPlaying={store.playback.isPlaying}
       speedMultiplier={store.playback.speedMultiplier}
-      mode={store.ui.mode}
+      activeSource={store.ui.activeSource}
+      selectedSource={store.ui.selectedSource}
       cameraLocked={store.ui.cameraLocked}
       theme={store.ui.theme}
+      isConnectionPanelOpen={store.ui.isConnectionPanelOpen}
       wind={store.wind}
       connectionStatus={store.live.connectionStatus}
       serialPorts={store.live.serialPorts}
       serialPath={store.live.serialPath}
       serialBaudRate={store.live.serialBaudRate}
       websocketUrl={store.live.websocketUrl}
-      onModeChange={store.setMode}
+      onSelectedSourceChange={store.setSelectedSource}
+      onActivateSource={() => void store.activateSelectedSource()}
       onThemeChange={store.setTheme}
       onCameraLockToggle={() => store.setCameraLocked(!store.ui.cameraLocked)}
+      onConnectionPanelToggle={() => store.setConnectionPanelOpen(!store.ui.isConnectionPanelOpen)}
+      onConnectionPanelClose={() => store.setConnectionPanelOpen(false)}
       onTogglePlay={store.toggleReplay}
       onSeekReplay={store.seekReplayProgress}
       onSpeedChange={store.setSpeedMultiplier}
@@ -50,8 +55,6 @@ export const AppShellContainer = observer(function AppShellContainer() {
       onSerialPathChange={store.setSerialPath}
       onSerialBaudRateChange={store.setSerialBaudRate}
       onWebSocketUrlChange={store.setWebSocketUrl}
-      onConnectSerial={() => void store.connectSerial()}
-      onConnectWebSocket={() => void store.connectWebSocket()}
       onDisconnectLive={() => void store.disconnectLive()}
     />
   )

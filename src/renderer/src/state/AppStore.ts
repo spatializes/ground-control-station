@@ -1,10 +1,10 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type {
   ConnectionStatus,
+  DataSourceKind,
   GcsApi,
   SerialPortInfo,
   TelemetryFrame,
-  TelemetryMode,
   ThemeMode,
   WindConfig
 } from '@shared/types'
@@ -35,9 +35,11 @@ export class AppStore {
   }
 
   readonly ui = {
-    mode: 'replay' as TelemetryMode,
+    activeSource: 'csv' as DataSourceKind,
+    selectedSource: 'csv' as DataSourceKind,
     cameraLocked: true,
-    theme: 'light' as ThemeMode
+    theme: 'light' as ThemeMode,
+    isConnectionPanelOpen: false
   }
 
   readonly live = {
@@ -93,7 +95,7 @@ export class AppStore {
   }
 
   get currentFrame(): TelemetryFrame | null {
-    if (this.ui.mode === 'live' && this.live.latestFrame) {
+    if (this.ui.activeSource !== 'csv' && this.live.latestFrame) {
       return this.live.latestFrame
     }
 
@@ -101,7 +103,7 @@ export class AppStore {
   }
 
   get canPlayReplay(): boolean {
-    return this.ui.mode === 'replay' && this.playback.frames.length > 1
+    return this.ui.activeSource === 'csv' && this.playback.frames.length > 1
   }
 
   async initializeReplay(): Promise<void> {
@@ -136,11 +138,36 @@ export class AppStore {
     this.playback.isPlaying = false
   }
 
-  setMode(mode: TelemetryMode): void {
-    this.ui.mode = mode
-    if (mode === 'live') {
+  setSelectedSource(source: DataSourceKind): void {
+    this.ui.selectedSource = source
+  }
+
+  async activateSelectedSource(): Promise<void> {
+    if (this.ui.selectedSource === 'csv') {
+      await this.disconnectLive()
+      runInAction(() => {
+        this.ui.activeSource = 'csv'
+      })
+      return
+    }
+
+    if (this.ui.selectedSource === 'serial') {
+      await this.connectSerial()
+      return
+    }
+
+    await this.connectWebSocket()
+  }
+
+  setActiveSource(source: DataSourceKind): void {
+    this.ui.activeSource = source
+    if (source !== 'csv') {
       this.pauseReplay()
     }
+  }
+
+  setConnectionPanelOpen(isOpen: boolean): void {
+    this.ui.isConnectionPanelOpen = isOpen
   }
 
   setTheme(theme: ThemeMode): void {
@@ -244,7 +271,7 @@ export class AppStore {
     })
 
     runInAction(() => {
-      this.ui.mode = 'live'
+      this.ui.activeSource = 'serial'
     })
   }
 
@@ -258,16 +285,23 @@ export class AppStore {
     })
 
     runInAction(() => {
-      this.ui.mode = 'live'
+      this.ui.activeSource = 'websocket'
     })
   }
 
   async disconnectLive(): Promise<void> {
     if (!this.api) {
+      this.ui.activeSource = 'csv'
       return
     }
 
     await this.api.disconnectLive()
+
+    runInAction(() => {
+      if (this.ui.activeSource !== 'csv') {
+        this.ui.activeSource = 'csv'
+      }
+    })
   }
 
   private bindLiveListeners(): void {

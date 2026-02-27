@@ -3,7 +3,7 @@ import { formatDuration } from '../../lib/format'
 
 interface PlaybackBarProps {
   isPlaying: boolean
-  mode: 'replay' | 'live'
+  activeSource: 'csv' | 'serial' | 'websocket'
   progress: number
   currentTimeMs: number
   durationMs: number
@@ -16,7 +16,7 @@ interface PlaybackBarProps {
 
 export function PlaybackBar({
   isPlaying,
-  mode,
+  activeSource,
   progress,
   currentTimeMs,
   durationMs,
@@ -26,7 +26,7 @@ export function PlaybackBar({
   onSeekProgress,
   onSpeedChange
 }: PlaybackBarProps) {
-  const disabled = !canPlay || mode !== 'replay'
+  const disabled = !canPlay || activeSource !== 'csv'
 
   const handleSliderChange = (event: ChangeEvent<HTMLInputElement>): void => {
     const value = Number(event.target.value)
@@ -68,7 +68,7 @@ export function PlaybackBar({
 
       <label className="speed-select" htmlFor="speed-select">
         Speed
-        <select id="speed-select" value={speedMultiplier} onChange={handleSpeedChange} disabled={mode !== 'replay'}>
+        <select id="speed-select" value={speedMultiplier} onChange={handleSpeedChange} disabled={activeSource !== 'csv'}>
           <option value={0.5}>0.5x</option>
           <option value={1}>1x</option>
           <option value={1.5}>1.5x</option>
