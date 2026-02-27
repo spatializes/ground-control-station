@@ -1,0 +1,63 @@
+{
+  "name": "ground-control-station",
+  "version": "0.1.0",
+  "description": "Modern Electron ground control station demo with Cesium, React, and MobX",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "vitest run src/renderer/src/tests/replay-smoke.test.ts",
+    "package": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.droplands.gcs",
+    "productName": "Droplands GCS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "dependencies": {
+    "cesium": "^1.138.0",
+    "mobx": "^6.13.7",
+    "mobx-react-lite": "^4.1.1",
+    "node-mavlink": "^2.3.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "serialport": "^13.0.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.14",
+    "@types/react-dom": "^19.1.9",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^40.6.1",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.10",
+    "vite-plugin-cesium": "^1.2.23",
+    "vitest": "^3.2.4"
+  }
+}

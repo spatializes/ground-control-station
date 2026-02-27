@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap');
+
+:root {
+  --radius-xl: 20px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --shadow-lg: 0 20px 48px rgba(10, 18, 41, 0.25);
+  --shadow-md: 0 12px 26px rgba(10, 18, 41, 0.18);
+  --font-body: 'Space Grotesk', sans-serif;
+  --font-heading: 'Sora', sans-serif;
+}
+
+body.theme-light {
+  --bg-start: #f7faff;
+  --bg-end: #dfe8f7;
+  --surface: rgba(249, 252, 255, 0.9);
+  --surface-strong: rgba(255, 255, 255, 0.92);
+  --line: rgba(16, 26, 42, 0.16);
+  --ink: #0f1827;
+  --ink-soft: #546075;
+  --accent: #0d63ff;
+  --accent-contrast: #f8fbff;
+}
+
+body.theme-dark {
+  --bg-start: #0b1220;
+  --bg-end: #0f1e35;
+  --surface: rgba(15, 27, 46, 0.78);
+  --surface-strong: rgba(20, 36, 59, 0.88);
+  --line: rgba(151, 181, 220, 0.2);
+  --ink: #e6f0ff;
+  --ink-soft: #a4b4d2;
+  --accent: #3b8dff;
+  --accent-contrast: #eff5ff;
+}
