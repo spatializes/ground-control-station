@@ -24,10 +24,10 @@ export function useAircraftEntity(viewer: Viewer | null, frame: TelemetryFrame |
       name: 'Aircraft',
       position: Cartesian3.fromDegrees(-122.4194, 37.7749, 200),
       model: {
-        uri: '/models/Cesium_Air.glb',
-        minimumPixelSize: 80,
-        maximumScale: 240,
-        scale: 1.3
+        uri: './models/CesiumDrone.glb',
+        minimumPixelSize: 110,
+        maximumScale: 320,
+        scale: 2.1
       }
     })
 

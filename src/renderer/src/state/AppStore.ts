@@ -109,7 +109,7 @@ export class AppStore {
     this.loadError = ''
 
     try {
-      const frames = await this.csvLoader('/data/ground-control-test-data.csv')
+      const frames = await this.csvLoader('./data/ground-control-test-data.csv')
       runInAction(() => {
         this.setReplayFrames(frames)
         this.loadState = 'ready'

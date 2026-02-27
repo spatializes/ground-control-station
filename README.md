@@ -1,4 +1,4 @@
-# Droplands Ground Control Station (V1)
+# Ground Control Station (V1)
 
 Replay-first Electron Ground Control Station built with production-focused TypeScript architecture.
 

@@ -21,4 +21,11 @@ describe('parseCsv', () => {
     const brokenCsv = `TimeStampMS,GPS.Lat\n1,2`
     expect(() => parseCsv(brokenCsv)).toThrow('Missing required CSV column')
   })
+
+  it('supports UTF-8 BOM on first header', () => {
+    const csvWithBom = `\uFEFFTimeStampMS,GPS.Lat,GPS.Lng,GPS.Alt,GPS.Spd,ARSP.Airspeed,ATT.Pitch,ATT.Roll,ATT.Yaw\n1,26.1,-97.3,95,9,13,1,2,10`
+    const frames = parseCsv(csvWithBom)
+    expect(frames).toHaveLength(1)
+    expect(frames[0].timestampMs).toBe(1)
+  })
 })

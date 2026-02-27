@@ -18,8 +18,12 @@ function toNumber(value: string): number | null {
   return Number.isFinite(parsedValue) ? parsedValue : null
 }
 
+function normalizeHeader(column: string): string {
+  return column.replace(/^\uFEFF/, '').trim()
+}
+
 function mapHeaders(headerRow: string): HeaderIndex {
-  const headers = headerRow.split(',').map((column) => column.trim())
+  const headers = headerRow.split(',').map((column) => normalizeHeader(column))
 
   const requiredIndex = (headerName: string): number => {
     const index = headers.indexOf(headerName)
