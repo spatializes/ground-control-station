@@ -500,12 +500,16 @@ select:focus-visible {
 
 .altitude-svg {
   width: 100%;
-  height: 132px;
+  height: 170px;
   display: block;
 }
 
 .altitude-svg.interactive {
   cursor: ew-resize;
+}
+
+.altitude-plot-wrap {
+  width: 100%;
 }
 
 .altitude-path {
@@ -515,6 +519,30 @@ select:focus-visible {
   stroke-linecap: round;
   stroke-linejoin: round;
   shape-rendering: geometricPrecision;
+}
+
+.altitude-grid-line {
+  stroke: color-mix(in srgb, var(--ink) 14%, transparent);
+  stroke-width: 1;
+}
+
+.altitude-x-tick {
+  stroke: color-mix(in srgb, var(--ink) 26%, transparent);
+  stroke-width: 1;
+}
+
+.altitude-axis-tick {
+  fill: var(--ink-soft);
+  font-size: 0.64rem;
+  letter-spacing: 0.02em;
+}
+
+.altitude-axis-caption {
+  fill: color-mix(in srgb, var(--ink-soft) 80%, var(--ink) 20%);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .altitude-marker-line {

@@ -19,29 +19,30 @@
   - Serial MAVLink (Pixhawk/915MHz telemetry)
   - Raw MAVLink over WebSocket
 
-## Commands
+## How to Build
+
+```bash
+npm install
+npm run build
+```
+
+Package distributables:
+
+```bash
+npm run dist
+```
+
+## How to Run
 
 ```bash
 npm install
 npm run dev
-npm run typecheck
-npm run test
-npm run build
-npm run dist
 ```
 
-## Primary Validation Target
-
-The smoke test validates the assignment workflow:
-
-1. Load provided CSV telemetry.
-2. Press Play.
-3. 3D aircraft + telemetry update over time.
-4. Press Pause to halt updates.
-5. Scrub timeline and verify deterministic UI updates.
-
-Run it directly:
+## How to Test
 
 ```bash
+npm run typecheck
+npm run test
 npm run test:smoke
 ```
