@@ -1,7 +1,17 @@
-import type { ConnectionStatus, DataSourceKind, SerialPortInfo, TelemetryFrame, ThemeMode, WindConfig } from '@shared/types'
+import type {
+  ConnectionStatus,
+  DataSourceKind,
+  SerialPortInfo,
+  TelemetryFrame,
+  ThemeMode,
+  WindConfig,
+  WindFetchState,
+  WindMode
+} from '@shared/types'
 import { CesiumScene } from '../cesium/CesiumScene'
 import { PlaybackBar } from '../components/controls/PlaybackBar'
 import { ThemeToggle } from '../components/controls/ThemeToggle'
+import { WindControl } from '../components/controls/WindControl'
 import { HudOverlay } from '../components/hud/HudOverlay'
 import { AltitudeProfilePanel } from '../components/panels/AltitudeProfilePanel'
 import { ConnectionPanel } from '../components/panels/ConnectionPanel'
@@ -23,6 +33,13 @@ interface AppShellViewProps {
   isConnectionPanelOpen: boolean
   isAltitudeProfileCollapsed: boolean
   wind: WindConfig
+  windLabel: string
+  windEnabled: boolean
+  windMode: WindMode
+  windModeBadge: 'SYN' | 'LIVE'
+  windFetchState: WindFetchState
+  windStatusText: string
+  isWindPanelOpen: boolean
   connectionStatus: ConnectionStatus
   serialPorts: SerialPortInfo[]
   serialPath: string
@@ -34,6 +51,10 @@ interface AppShellViewProps {
   onCameraLockToggle: () => void
   onConnectionPanelToggle: () => void
   onConnectionPanelClose: () => void
+  onWindPanelToggle: () => void
+  onWindPanelClose: () => void
+  onWindEnabledChange: (enabled: boolean) => void
+  onWindModeChange: (mode: WindMode) => void
   onAltitudeProfileToggle: () => void
   onTogglePlay: () => void
   onSeekReplay: (progress: number) => void
@@ -75,6 +96,13 @@ export function AppShellView({
   isConnectionPanelOpen,
   isAltitudeProfileCollapsed,
   wind,
+  windLabel,
+  windEnabled,
+  windMode,
+  windModeBadge,
+  windFetchState,
+  windStatusText,
+  isWindPanelOpen,
   connectionStatus,
   serialPorts,
   serialPath,
@@ -86,6 +114,10 @@ export function AppShellView({
   onCameraLockToggle,
   onConnectionPanelToggle,
   onConnectionPanelClose,
+  onWindPanelToggle,
+  onWindPanelClose,
+  onWindEnabledChange,
+  onWindModeChange,
   onAltitudeProfileToggle,
   onTogglePlay,
   onSeekReplay,
@@ -119,7 +151,7 @@ export function AppShellView({
 
   return (
     <main className="app-shell theme-surface">
-      <CesiumScene frame={frame} cameraLocked={cameraLocked} wind={wind} />
+      <CesiumScene frame={frame} cameraLocked={cameraLocked} wind={wind} windEnabled={windEnabled} theme={theme} />
 
       <header className="app-header">
         <div className="brand-block">
@@ -135,9 +167,19 @@ export function AppShellView({
           <button type="button" className="ghost-btn" onClick={onCameraLockToggle}>
             {cameraLocked ? 'Unlock Camera' : 'Lock Camera'}
           </button>
-          <div className="wind-chip">
-            Wind {wind.fromDirectionDeg.toFixed(0)}° @ {wind.speedMps.toFixed(1)} m/s
-          </div>
+          <WindControl
+            label={windLabel}
+            modeBadge={windModeBadge}
+            enabled={windEnabled}
+            mode={windMode}
+            fetchState={windFetchState}
+            statusText={windStatusText}
+            isOpen={isWindPanelOpen}
+            onTogglePanel={onWindPanelToggle}
+            onClosePanel={onWindPanelClose}
+            onEnabledChange={onWindEnabledChange}
+            onModeChange={onWindModeChange}
+          />
         </div>
       </header>
 

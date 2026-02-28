@@ -13,28 +13,32 @@ describe('Replay smoke scenario', () => {
     expect(frames.length).toBeGreaterThan(1000)
 
     const store = new AppStore({ api: null })
-    store.setReplayFrames(frames)
+    try {
+      store.setReplayFrames(frames)
 
-    const initialFrame = store.currentFrame
-    expect(initialFrame).not.toBeNull()
+      const initialFrame = store.currentFrame
+      expect(initialFrame).not.toBeNull()
 
-    store.playReplay()
-    store.advancePlaybackBy(1000)
+      store.playReplay()
+      store.advancePlaybackBy(1000)
 
-    const playingFrame = store.currentFrame
-    expect(playingFrame).not.toBeNull()
-    expect(playingFrame?.timestampMs).toBeGreaterThan(initialFrame?.timestampMs ?? 0)
+      const playingFrame = store.currentFrame
+      expect(playingFrame).not.toBeNull()
+      expect(playingFrame?.timestampMs).toBeGreaterThan(initialFrame?.timestampMs ?? 0)
 
-    store.pauseReplay()
-    const pausedTimestamp = store.currentFrame?.timestampMs ?? 0
-    store.advancePlaybackBy(1200)
-    expect(store.currentFrame?.timestampMs ?? 0).toBe(pausedTimestamp)
+      store.pauseReplay()
+      const pausedTimestamp = store.currentFrame?.timestampMs ?? 0
+      store.advancePlaybackBy(1200)
+      expect(store.currentFrame?.timestampMs ?? 0).toBe(pausedTimestamp)
 
-    store.seekReplayProgress(0.5)
-    const scrubbedTimestamp = store.currentFrame?.timestampMs ?? 0
-    expect(scrubbedTimestamp).toBeGreaterThan(pausedTimestamp)
+      store.seekReplayProgress(0.5)
+      const scrubbedTimestamp = store.currentFrame?.timestampMs ?? 0
+      expect(scrubbedTimestamp).toBeGreaterThan(pausedTimestamp)
 
-    store.seekReplayProgress(0.5)
-    expect(store.currentFrame?.timestampMs ?? 0).toBe(scrubbedTimestamp)
+      store.seekReplayProgress(0.5)
+      expect(store.currentFrame?.timestampMs ?? 0).toBe(scrubbedTimestamp)
+    } finally {
+      store.dispose()
+    }
   })
 })

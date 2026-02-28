@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import type { TelemetryFrame } from '@shared/types'
+import { describe, expect, it, vi } from 'vitest'
+import type { TelemetryFrame, WindSnapshot } from '@shared/types'
 import { AppStore } from './AppStore'
 
 const FRAMES: TelemetryFrame[] = [
@@ -29,46 +29,160 @@ const FRAMES: TelemetryFrame[] = [
   }
 ]
 
+async function waitForCondition(condition: () => boolean, timeoutMs = 500): Promise<void> {
+  const startedAt = Date.now()
+
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Condition did not become true in time')
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+}
+
 describe('AppStore playback integration', () => {
   it('plays, advances, and pauses replay', () => {
     const store = new AppStore({ api: null })
-    store.setReplayFrames(FRAMES)
-    store.setSpeedMultiplier(1)
+    try {
+      store.setReplayFrames(FRAMES)
+      store.setSpeedMultiplier(1)
 
-    store.playReplay()
-    expect(store.playback.isPlaying).toBe(true)
+      store.playReplay()
+      expect(store.playback.isPlaying).toBe(true)
 
-    store.advancePlaybackBy(500)
-    expect(store.playback.cursorMs).toBe(500)
-    expect(store.currentFrame?.altitudeM).toBeCloseTo(50)
+      store.advancePlaybackBy(500)
+      expect(store.playback.cursorMs).toBe(500)
+      expect(store.currentFrame?.altitudeM).toBeCloseTo(50)
 
-    store.pauseReplay()
-    const pausedCursor = store.playback.cursorMs
-    store.advancePlaybackBy(400)
-    expect(store.playback.cursorMs).toBe(pausedCursor)
+      store.pauseReplay()
+      const pausedCursor = store.playback.cursorMs
+      store.advancePlaybackBy(400)
+      expect(store.playback.cursorMs).toBe(pausedCursor)
+    } finally {
+      store.dispose()
+    }
   })
 
   it('scrubs deterministically by progress', () => {
     const store = new AppStore({ api: null })
-    store.setReplayFrames(FRAMES)
+    try {
+      store.setReplayFrames(FRAMES)
 
-    store.seekReplayProgress(0.75)
-    expect(store.playback.cursorMs).toBeCloseTo(750)
-    expect(store.currentReplayIndex).toBe(0)
+      store.seekReplayProgress(0.75)
+      expect(store.playback.cursorMs).toBeCloseTo(750)
+      expect(store.currentReplayIndex).toBe(0)
+    } finally {
+      store.dispose()
+    }
   })
 
   it('only allows replay playback when CSV is active source', () => {
     const store = new AppStore({ api: null })
-    store.setReplayFrames(FRAMES)
+    try {
+      store.setReplayFrames(FRAMES)
 
-    store.setSelectedSource('serial')
-    store.setActiveSource('serial')
-    store.playReplay()
-    expect(store.playback.isPlaying).toBe(false)
+      store.setSelectedSource('serial')
+      store.setActiveSource('serial')
+      store.playReplay()
+      expect(store.playback.isPlaying).toBe(false)
 
-    store.setSelectedSource('csv')
-    store.setActiveSource('csv')
-    store.playReplay()
-    expect(store.playback.isPlaying).toBe(true)
+      store.setSelectedSource('csv')
+      store.setActiveSource('csv')
+      store.playReplay()
+      expect(store.playback.isPlaying).toBe(true)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('switches to live wind mode and uses fetched wind snapshot', async () => {
+    let nowMs = 100_000
+    const windSnapshot: WindSnapshot = {
+      source: 'open-meteo',
+      fromDirectionDeg: 145,
+      speedMps: 6.3,
+      updatedAtMs: nowMs
+    }
+    const windFetcher = vi.fn(async () => windSnapshot)
+
+    const store = new AppStore({
+      api: null,
+      windFetcher,
+      now: () => nowMs
+    })
+
+    try {
+      store.setReplayFrames(FRAMES)
+      store.setWindMode('live')
+
+      await waitForCondition(() => store.wind.fetchState === 'ready')
+
+      expect(windFetcher).toHaveBeenCalledTimes(1)
+      expect(store.effectiveWind.fromDirectionDeg).toBe(145)
+      expect(store.effectiveWind.speedMps).toBe(6.3)
+      expect(store.effectiveWindLabel).toContain('145')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('falls back to synthetic wind when first live fetch fails', async () => {
+    const windFetcher = vi.fn(async () => {
+      throw new Error('network down')
+    })
+
+    const store = new AppStore({
+      api: null,
+      windFetcher
+    })
+
+    try {
+      store.setReplayFrames(FRAMES)
+      store.setWindMode('live')
+
+      await waitForCondition(() => store.wind.fetchState === 'error')
+
+      expect(store.effectiveWind.fromDirectionDeg).toBe(store.wind.synthetic.fromDirectionDeg)
+      expect(store.effectiveWind.speedMps).toBe(store.wind.synthetic.speedMps)
+      expect(store.windStatusText).toContain('using synthetic')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('throttles live wind refreshes unless time interval or movement threshold is reached', async () => {
+    let nowMs = 20_000
+    const windFetcher = vi.fn(async (latitudeDeg: number, longitudeDeg: number): Promise<WindSnapshot> => {
+      return {
+        source: 'open-meteo',
+        fromDirectionDeg: 180,
+        speedMps: 8,
+        updatedAtMs: nowMs + latitudeDeg + longitudeDeg
+      }
+    })
+
+    const store = new AppStore({
+      api: null,
+      windFetcher,
+      now: () => nowMs
+    })
+
+    try {
+      store.setReplayFrames(FRAMES)
+      store.setWindMode('live')
+
+      await waitForCondition(() => store.wind.fetchState === 'ready')
+      expect(windFetcher).toHaveBeenCalledTimes(1)
+
+      await store.refreshLiveWindForFrame(store.currentFrame, false)
+      expect(windFetcher).toHaveBeenCalledTimes(1)
+
+      nowMs += 46_000
+      await store.refreshLiveWindForFrame(store.currentFrame, false)
+      expect(windFetcher).toHaveBeenCalledTimes(2)
+    } finally {
+      store.dispose()
+    }
   })
 })

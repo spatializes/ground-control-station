@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { UrlTemplateImageryProvider, Viewer } from 'cesium'
-import type { TelemetryFrame, WindConfig } from '@shared/types'
+import type { TelemetryFrame, ThemeMode, WindConfig } from '@shared/types'
 import { useAircraftEntity } from './hooks/useAircraftEntity'
 import { useCameraLock } from './hooks/useCameraLock'
 import { useWindLayer } from './hooks/useWindLayer'
@@ -9,9 +9,11 @@ interface CesiumSceneProps {
   frame: TelemetryFrame | null
   cameraLocked: boolean
   wind: WindConfig
+  windEnabled: boolean
+  theme: ThemeMode
 }
 
-export function CesiumScene({ frame, cameraLocked, wind }: CesiumSceneProps) {
+export function CesiumScene({ frame, cameraLocked, wind, windEnabled, theme }: CesiumSceneProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [viewer, setViewer] = useState<Viewer | null>(null)
 
@@ -26,7 +28,7 @@ export function CesiumScene({ frame, cameraLocked, wind }: CesiumSceneProps) {
 
   const aircraft = useAircraftEntity(viewer, frame)
   useCameraLock(viewer, aircraft, cameraLocked, frame)
-  useWindLayer(viewer, frame, wind)
+  useWindLayer(viewer, frame, wind, windEnabled, theme)
 
   useEffect(() => {
     if (!containerRef.current) {

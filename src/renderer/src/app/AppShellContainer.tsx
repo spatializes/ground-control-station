@@ -37,7 +37,14 @@ export const AppShellContainer = observer(function AppShellContainer() {
       theme={store.ui.theme}
       isConnectionPanelOpen={store.ui.isConnectionPanelOpen}
       isAltitudeProfileCollapsed={store.ui.isAltitudeProfileCollapsed}
-      wind={store.wind}
+      wind={store.effectiveWind}
+      windLabel={store.effectiveWindLabel}
+      windEnabled={store.wind.enabled}
+      windMode={store.wind.mode}
+      windModeBadge={store.windModeBadge}
+      windFetchState={store.wind.fetchState}
+      windStatusText={store.windStatusText}
+      isWindPanelOpen={store.ui.windPanelOpen}
       connectionStatus={store.live.connectionStatus}
       serialPorts={store.live.serialPorts}
       serialPath={store.live.serialPath}
@@ -49,6 +56,10 @@ export const AppShellContainer = observer(function AppShellContainer() {
       onCameraLockToggle={() => store.setCameraLocked(!store.ui.cameraLocked)}
       onConnectionPanelToggle={() => store.setConnectionPanelOpen(!store.ui.isConnectionPanelOpen)}
       onConnectionPanelClose={() => store.setConnectionPanelOpen(false)}
+      onWindPanelToggle={() => store.setWindPanelOpen(!store.ui.windPanelOpen)}
+      onWindPanelClose={() => store.setWindPanelOpen(false)}
+      onWindEnabledChange={store.setWindEnabled}
+      onWindModeChange={store.setWindMode}
       onAltitudeProfileToggle={() => store.setAltitudeProfileCollapsed(!store.ui.isAltitudeProfileCollapsed)}
       onTogglePlay={store.toggleReplay}
       onSeekReplay={store.seekReplayProgress}

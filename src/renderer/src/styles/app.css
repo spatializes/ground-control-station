@@ -120,8 +120,7 @@ select:focus-visible {
 }
 
 .ghost-btn,
-.primary-btn,
-.wind-chip {
+.primary-btn {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -145,14 +144,100 @@ select:focus-visible {
   cursor: not-allowed;
 }
 
-.wind-chip {
-  font-size: 0.83rem;
-}
-
 .source-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.wind-control {
+  position: relative;
+}
+
+.wind-control-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 39px;
+}
+
+.wind-control-trigger.is-disabled {
+  opacity: 0.72;
+}
+
+.wind-control-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+
+.wind-control-label {
+  font-size: 0.83rem;
+  letter-spacing: 0.01em;
+}
+
+.wind-mode-badge {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-size: 0.68rem;
+  padding: 4px 7px;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.wind-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(300px, 72vw);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+  display: grid;
+  gap: 9px;
+  z-index: 15;
+}
+
+.wind-popover-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+}
+
+.wind-toggle-btn {
+  min-width: 58px;
+  padding: 6px 12px;
+}
+
+.wind-toggle-btn.active {
+  border-color: transparent;
+  background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #001a44 28%));
+  color: var(--accent-contrast);
+}
+
+.wind-mode-toggle {
+  grid-template-columns: 1fr 1fr;
+}
+
+.wind-status {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  min-height: 1.1rem;
+}
+
+.wind-status-error {
+  color: color-mix(in srgb, #d24f4f 70%, var(--ink-soft) 30%);
 }
 
 .source-segmented {

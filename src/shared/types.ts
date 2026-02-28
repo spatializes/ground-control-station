@@ -1,6 +1,8 @@
 export type TelemetryMode = 'replay' | 'live'
 export type ThemeMode = 'light' | 'dark'
 export type DataSourceKind = 'csv' | 'serial' | 'websocket'
+export type WindMode = 'synthetic' | 'live'
+export type WindFetchState = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface TelemetryFrame {
   timestampMs: number
@@ -18,6 +20,11 @@ export interface TelemetryFrame {
 export interface WindConfig {
   fromDirectionDeg: number
   speedMps: number
+}
+
+export interface WindSnapshot extends WindConfig {
+  source: 'synthetic' | 'open-meteo'
+  updatedAtMs: number
 }
 
 export interface SerialPortInfo {
