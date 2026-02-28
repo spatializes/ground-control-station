@@ -33,6 +33,7 @@ describe('AppStore playback integration', () => {
   it('plays, advances, and pauses replay', () => {
     const store = new AppStore({ api: null })
     store.setReplayFrames(FRAMES)
+    store.setSpeedMultiplier(1)
 
     store.playReplay()
     expect(store.playback.isPlaying).toBe(true)

@@ -42,8 +42,8 @@ const FRAMES: TelemetryFrame[] = [
 ]
 
 describe('buildAltitudeProfile', () => {
-  it('creates path geometry and marker values', () => {
-    const profile = buildAltitudeProfile(FRAMES, 1, 300, 100)
+  it('creates path geometry from timestamp and altitude ranges', () => {
+    const profile = buildAltitudeProfile(FRAMES, 300, 100)
     expect(profile).not.toBeNull()
     expect(profile?.path.startsWith('M')).toBe(true)
     expect(profile?.minAltitudeM).toBe(10)

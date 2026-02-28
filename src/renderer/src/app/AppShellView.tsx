@@ -21,6 +21,7 @@ interface AppShellViewProps {
   cameraLocked: boolean
   theme: ThemeMode
   isConnectionPanelOpen: boolean
+  isAltitudeProfileCollapsed: boolean
   wind: WindConfig
   connectionStatus: ConnectionStatus
   serialPorts: SerialPortInfo[]
@@ -33,8 +34,10 @@ interface AppShellViewProps {
   onCameraLockToggle: () => void
   onConnectionPanelToggle: () => void
   onConnectionPanelClose: () => void
+  onAltitudeProfileToggle: () => void
   onTogglePlay: () => void
   onSeekReplay: (progress: number) => void
+  onHoverScrubReplay: (progress: number) => void
   onSpeedChange: (speed: number) => void
   onRefreshSerialPorts: () => void
   onSerialPathChange: (path: string) => void
@@ -70,6 +73,7 @@ export function AppShellView({
   cameraLocked,
   theme,
   isConnectionPanelOpen,
+  isAltitudeProfileCollapsed,
   wind,
   connectionStatus,
   serialPorts,
@@ -82,8 +86,10 @@ export function AppShellView({
   onCameraLockToggle,
   onConnectionPanelToggle,
   onConnectionPanelClose,
+  onAltitudeProfileToggle,
   onTogglePlay,
   onSeekReplay,
+  onHoverScrubReplay,
   onSpeedChange,
   onRefreshSerialPorts,
   onSerialPathChange,
@@ -91,6 +97,8 @@ export function AppShellView({
   onWebSocketUrlChange,
   onDisconnectLive
 }: AppShellViewProps) {
+  const currentReplayAltitudeM = replayFrames[replayIndex]?.altitudeM ?? null
+
   if (loadState === 'loading' || loadState === 'idle') {
     return (
       <main className="loading-state">
@@ -169,7 +177,15 @@ export function AppShellView({
           onSpeedChange={onSpeedChange}
         />
 
-        <AltitudeProfilePanel frames={replayFrames} currentIndex={replayIndex} />
+        <AltitudeProfilePanel
+          frames={replayFrames}
+          currentProgress={replayProgress}
+          currentAltitudeM={currentReplayAltitudeM}
+          isCollapsed={isAltitudeProfileCollapsed}
+          isInteractive={activeSource === 'csv'}
+          onToggleCollapsed={onAltitudeProfileToggle}
+          onHoverScrub={onHoverScrubReplay}
+        />
       </footer>
     </main>
   )

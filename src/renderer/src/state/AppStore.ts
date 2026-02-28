@@ -31,7 +31,7 @@ export class AppStore {
     frames: [] as TelemetryFrame[],
     cursorMs: 0,
     isPlaying: false,
-    speedMultiplier: 1
+    speedMultiplier: 10
   }
 
   readonly ui = {
@@ -39,7 +39,8 @@ export class AppStore {
     selectedSource: 'csv' as DataSourceKind,
     cameraLocked: true,
     theme: 'light' as ThemeMode,
-    isConnectionPanelOpen: false
+    isConnectionPanelOpen: false,
+    isAltitudeProfileCollapsed: false
   }
 
   readonly live = {
@@ -170,6 +171,19 @@ export class AppStore {
     this.ui.isConnectionPanelOpen = isOpen
   }
 
+  setAltitudeProfileCollapsed(isCollapsed: boolean): void {
+    this.ui.isAltitudeProfileCollapsed = isCollapsed
+  }
+
+  scrubReplayByProgress(progress: number): void {
+    if (this.ui.activeSource !== 'csv') {
+      return
+    }
+
+    this.pauseReplay()
+    this.seekReplayProgress(progress)
+  }
+
   setTheme(theme: ThemeMode): void {
     this.ui.theme = theme
   }
@@ -179,7 +193,7 @@ export class AppStore {
   }
 
   setSpeedMultiplier(multiplier: number): void {
-    this.playback.speedMultiplier = clamp(multiplier, 0.25, 4)
+    this.playback.speedMultiplier = clamp(multiplier, 0.25, 10)
   }
 
   toggleReplay(): void {

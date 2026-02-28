@@ -74,6 +74,7 @@ export function PlaybackBar({
           <option value={1.5}>1.5x</option>
           <option value={2}>2x</option>
           <option value={4}>4x</option>
+          <option value={10}>10x</option>
         </select>
       </label>
     </section>

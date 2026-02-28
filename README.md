@@ -1,6 +1,4 @@
-# Ground Control Station (V1)
-
-Replay-first Electron Ground Control Station built with production-focused TypeScript architecture.
+# Ground Control Station
 
 ## Stack
 
@@ -20,15 +18,6 @@ Replay-first Electron Ground Control Station built with production-focused TypeS
 - Minimal live telemetry links:
   - Serial MAVLink (Pixhawk/915MHz telemetry)
   - Raw MAVLink over WebSocket
-
-## Architecture Rules
-
-- One component per file, one job per component
-- Container components are store-aware; presentational components are props-only
-- Hooks-first Cesium behavior (`useAircraftEntity`, `useCameraLock`, `useWindLayer`)
-- Pure data functions in `lib/` for parsing/interpolation/math
-- Strict typed contracts shared across renderer/main/preload
-- IPC channels centralized in `src/shared/ipc.ts`
 
 ## Commands
 

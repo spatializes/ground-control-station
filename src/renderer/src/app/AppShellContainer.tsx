@@ -36,6 +36,7 @@ export const AppShellContainer = observer(function AppShellContainer() {
       cameraLocked={store.ui.cameraLocked}
       theme={store.ui.theme}
       isConnectionPanelOpen={store.ui.isConnectionPanelOpen}
+      isAltitudeProfileCollapsed={store.ui.isAltitudeProfileCollapsed}
       wind={store.wind}
       connectionStatus={store.live.connectionStatus}
       serialPorts={store.live.serialPorts}
@@ -48,8 +49,10 @@ export const AppShellContainer = observer(function AppShellContainer() {
       onCameraLockToggle={() => store.setCameraLocked(!store.ui.cameraLocked)}
       onConnectionPanelToggle={() => store.setConnectionPanelOpen(!store.ui.isConnectionPanelOpen)}
       onConnectionPanelClose={() => store.setConnectionPanelOpen(false)}
+      onAltitudeProfileToggle={() => store.setAltitudeProfileCollapsed(!store.ui.isAltitudeProfileCollapsed)}
       onTogglePlay={store.toggleReplay}
       onSeekReplay={store.seekReplayProgress}
+      onHoverScrubReplay={store.scrubReplayByProgress}
       onSpeedChange={store.setSpeedMultiplier}
       onRefreshSerialPorts={() => void store.refreshSerialPorts()}
       onSerialPathChange={store.setSerialPath}

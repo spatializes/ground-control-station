@@ -2,15 +2,35 @@ import type { TelemetryFrame } from '@shared/types'
 
 export interface AltitudeProfileGeometry {
   path: string
-  markerX: number
-  markerY: number
   minAltitudeM: number
   maxAltitudeM: number
 }
 
+export const PROFILE_VERTICAL_PADDING = 6
+
+function smoothAltitudes(values: number[], windowRadius = 2): number[] {
+  if (values.length <= 2 || windowRadius <= 0) {
+    return values
+  }
+
+  return values.map((_value, index) => {
+    const startIndex = Math.max(0, index - windowRadius)
+    const endIndex = Math.min(values.length - 1, index + windowRadius)
+
+    let total = 0
+    let count = 0
+
+    for (let currentIndex = startIndex; currentIndex <= endIndex; currentIndex += 1) {
+      total += values[currentIndex]
+      count += 1
+    }
+
+    return count > 0 ? total / count : values[index]
+  })
+}
+
 export function buildAltitudeProfile(
   frames: TelemetryFrame[],
-  currentIndex: number,
   width: number,
   height: number,
   sampleLimit = 1000
@@ -40,24 +60,20 @@ export function buildAltitudeProfile(
   }
 
   const altitudeRange = Math.max(1, maxAltitudeM - minAltitudeM)
+  const firstTimestampMs = sampledFrames[0].timestampMs
+  const durationMs = Math.max(1, sampledFrames[sampledFrames.length - 1].timestampMs - firstTimestampMs)
+  const smoothedAltitudes = smoothAltitudes(sampledFrames.map((frame) => frame.altitudeM))
+  const plotHeight = Math.max(1, height - PROFILE_VERTICAL_PADDING * 2)
 
   const pathCommands = sampledFrames.map((frame, index) => {
-    const x = (index / (sampledFrames.length - 1)) * width
-    const normalizedAltitude = (frame.altitudeM - minAltitudeM) / altitudeRange
-    const y = height - normalizedAltitude * height
+    const x = ((frame.timestampMs - firstTimestampMs) / durationMs) * width
+    const normalizedAltitude = (smoothedAltitudes[index] - minAltitudeM) / altitudeRange
+    const y = PROFILE_VERTICAL_PADDING + (1 - normalizedAltitude) * plotHeight
     return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`
   })
 
-  const clampedIndex = Math.max(0, Math.min(currentIndex, frames.length - 1))
-  const markerFrame = frames[clampedIndex]
-  const markerProgress = clampedIndex / (frames.length - 1)
-  const markerX = markerProgress * width
-  const markerY = height - ((markerFrame.altitudeM - minAltitudeM) / altitudeRange) * height
-
   return {
     path: pathCommands.join(' '),
-    markerX,
-    markerY,
     minAltitudeM,
     maxAltitudeM
   }
