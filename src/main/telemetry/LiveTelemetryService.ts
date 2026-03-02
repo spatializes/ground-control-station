@@ -75,6 +75,45 @@ function timeoutError(operation: string): Error {
   return new Error(`${operation} timed out after ${Math.floor(CONNECTION_TIMEOUT_MS / 1000)}s`)
 }
 
+function normalizePortPath(path: string): string {
+  return path.trim().toUpperCase()
+}
+
+async function openSerialPortWithTimeout(port: SerialPort, timeoutMs: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cleanup()
+      reject(new Error(`Serial connection timed out after ${Math.floor(timeoutMs / 1000)}s`))
+    }, timeoutMs)
+
+    const cleanup = (): void => {
+      clearTimeout(timeout)
+      port.off('open', onOpen)
+      port.off('error', onError)
+    }
+
+    const onOpen = (): void => {
+      cleanup()
+      resolve()
+    }
+
+    const onError = (error: Error): void => {
+      cleanup()
+      reject(error)
+    }
+
+    port.once('open', onOpen)
+    port.once('error', onError)
+
+    try {
+      port.open()
+    } catch (error) {
+      cleanup()
+      reject(error)
+    }
+  })
+}
+
 export class LiveTelemetryService {
   private readonly emitter = new EventEmitter()
 
@@ -117,26 +156,25 @@ export class LiveTelemetryService {
       message: `Opening ${options.path} @ ${options.baudRate}`
     })
 
+    const availablePorts = await this.listSerialPorts()
+    const normalizedRequestedPath = normalizePortPath(options.path)
+    const hasRequestedPort = availablePorts.some((port) => normalizePortPath(port.path) === normalizedRequestedPath)
+
+    if (!hasRequestedPort) {
+      throw new Error(`Serial port ${options.path} is not available`)
+    }
+
     const port = new SerialPort({
       path: options.path,
       baudRate: options.baudRate,
-      autoOpen: false
+      autoOpen: false,
+      rtscts: false,
+      xon: false,
+      xoff: false,
+      xany: false
     })
 
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(timeoutError('Serial connection'))
-      }, CONNECTION_TIMEOUT_MS)
-
-      port.open((error) => {
-        clearTimeout(timeout)
-        if (error) {
-          reject(error)
-          return
-        }
-        resolve()
-      })
-    })
+    await openSerialPortWithTimeout(port, CONNECTION_TIMEOUT_MS)
 
     this.serialPort = port
 
