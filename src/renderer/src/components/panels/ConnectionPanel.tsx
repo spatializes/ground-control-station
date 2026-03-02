@@ -15,7 +15,6 @@ interface ConnectionPanelProps {
   onSerialBaudRateChange: (baudRate: number) => void
   onWebSocketUrlChange: (url: string) => void
   onActivateSource: () => void
-  onDisconnectLive: () => void
   onClose: () => void
 }
 
@@ -45,7 +44,6 @@ export function ConnectionPanel({
   onSerialBaudRateChange,
   onWebSocketUrlChange,
   onActivateSource,
-  onDisconnectLive,
   onClose
 }: ConnectionPanelProps) {
   const handleSerialPathChange = (event: ChangeEvent<HTMLSelectElement>): void => {
@@ -82,7 +80,7 @@ export function ConnectionPanel({
         <div className="panel-header-actions">
           <span className="status-pill source-pill">Active: {sourceLabel(activeSource)}</span>
           <button type="button" className="ghost-btn panel-close-btn" onClick={onClose} aria-label="Close data source panel">
-            Close
+            <span aria-hidden="true">×</span>
           </button>
         </div>
       </div>
@@ -165,15 +163,14 @@ export function ConnectionPanel({
 
       <div className="panel-footer-row">
         <span className={`status-pill status-${status.state}`}>{status.state}</span>
-        <button
-          type="button"
-          className="ghost-btn"
-          onClick={onDisconnectLive}
-          disabled={activeSource === 'csv' || status.state === 'disconnected'}
-        >
-          Disconnect Live
-        </button>
       </div>
+
+      {status.message ? (
+        <p className={`connection-status-detail status-detail-${status.state}`}>
+          {status.transport ? `${status.transport.toUpperCase()}: ` : ''}
+          {status.message}
+        </p>
+      ) : null}
     </aside>
   )
 }

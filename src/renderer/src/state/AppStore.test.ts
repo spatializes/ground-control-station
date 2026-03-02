@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { TelemetryFrame, WindSnapshot } from '@shared/types'
+import type { GcsApi, TelemetryFrame, WindSnapshot } from '@shared/types'
 import { AppStore } from './AppStore'
 
 const FRAMES: TelemetryFrame[] = [
@@ -91,6 +91,41 @@ describe('AppStore playback integration', () => {
       store.setActiveSource('csv')
       store.playReplay()
       expect(store.playback.isPlaying).toBe(true)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('detaches replay frame when active source switches to live and no live frame exists', () => {
+    const store = new AppStore({ api: null })
+    try {
+      store.setReplayFrames(FRAMES)
+      expect(store.currentFrame).not.toBeNull()
+
+      store.setActiveSource('serial')
+      expect(store.currentFrame).toBeNull()
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('prefers USB-like serial ports over macOS Bluetooth incoming port by default', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => [
+        { path: '/dev/tty.Bluetooth-Incoming-Port' },
+        { path: '/dev/cu.usbmodem1201' }
+      ]),
+      connectSerial: vi.fn(async () => undefined),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => undefined),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      await store.refreshSerialPorts()
+      expect(store.live.serialPath).toBe('/dev/cu.usbmodem1201')
     } finally {
       store.dispose()
     }

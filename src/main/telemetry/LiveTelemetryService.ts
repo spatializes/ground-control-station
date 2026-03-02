@@ -31,6 +31,7 @@ interface PacketLike {
 const MSG_ID_ATTITUDE = 30
 const MSG_ID_GLOBAL_POSITION_INT = 33
 const MSG_ID_VFR_HUD = 74
+const CONNECTION_TIMEOUT_MS = 8_000
 
 function toDegrees(radians: number): number {
   return (radians * 180) / Math.PI
@@ -68,6 +69,10 @@ function isPacketLike(value: unknown): value is PacketLike {
     Buffer.isBuffer(packet.payload) &&
     typeof packet.protocol?.data === 'function'
   )
+}
+
+function timeoutError(operation: string): Error {
+  return new Error(`${operation} timed out after ${Math.floor(CONNECTION_TIMEOUT_MS / 1000)}s`)
 }
 
 export class LiveTelemetryService {
@@ -119,7 +124,12 @@ export class LiveTelemetryService {
     })
 
     await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(timeoutError('Serial connection'))
+      }, CONNECTION_TIMEOUT_MS)
+
       port.open((error) => {
+        clearTimeout(timeout)
         if (error) {
           reject(error)
           return
@@ -167,8 +177,19 @@ export class LiveTelemetryService {
     const socket = new WebSocket(options.url)
 
     await new Promise<void>((resolve, reject) => {
-      socket.once('open', () => resolve())
-      socket.once('error', (error: Error) => reject(error))
+      const timeout = setTimeout(() => {
+        reject(timeoutError('WebSocket connection'))
+      }, CONNECTION_TIMEOUT_MS)
+
+      socket.once('open', () => {
+        clearTimeout(timeout)
+        resolve()
+      })
+
+      socket.once('error', (error: Error) => {
+        clearTimeout(timeout)
+        reject(error)
+      })
     })
 
     this.websocket = socket

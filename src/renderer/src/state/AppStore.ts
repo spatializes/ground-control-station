@@ -29,6 +29,47 @@ interface WindCoordinates {
   longitudeDeg: number
 }
 
+function isBluetoothIncomingPath(path: string): boolean {
+  return path.toLowerCase().includes('bluetooth-incoming-port')
+}
+
+function serialPortPriority(port: SerialPortInfo): number {
+  const path = port.path.toLowerCase()
+  let priority = 0
+
+  if (path.startsWith('/dev/cu.')) {
+    priority += 30
+  } else if (path.startsWith('/dev/tty.')) {
+    priority += 20
+  }
+
+  if (path.includes('usb') || path.includes('acm') || path.includes('uart') || path.includes('serial')) {
+    priority += 40
+  }
+
+  if (isBluetoothIncomingPath(path)) {
+    priority -= 200
+  }
+
+  return priority
+}
+
+function sortSerialPorts(ports: SerialPortInfo[]): SerialPortInfo[] {
+  return [...ports].sort((left, right) => {
+    const priorityDelta = serialPortPriority(right) - serialPortPriority(left)
+    if (priorityDelta !== 0) {
+      return priorityDelta
+    }
+
+    return left.path.localeCompare(right.path)
+  })
+}
+
+function pickDefaultSerialPath(ports: SerialPortInfo[]): string {
+  const preferred = ports.find((port) => !isBluetoothIncomingPath(port.path))
+  return preferred?.path ?? ports[0]?.path ?? ''
+}
+
 const DEFAULT_WIND: WindConfig = {
   fromDirectionDeg: 232,
   speedMps: 9
@@ -43,6 +84,14 @@ const LIVE_WIND_REFRESH_DISTANCE_M = 2_000
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to fetch live wind'
+}
+
+function toErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message
+  }
+
+  return fallback
 }
 
 function formatRelativeAge(updatedAtMs: number, nowMs: number): string {
@@ -148,11 +197,11 @@ export class AppStore {
   }
 
   get currentFrame(): TelemetryFrame | null {
-    if (this.ui.activeSource !== 'csv' && this.live.latestFrame) {
-      return this.live.latestFrame
+    if (this.ui.activeSource === 'csv') {
+      return this.currentReplayFrame
     }
 
-    return this.currentReplayFrame
+    return this.live.latestFrame
   }
 
   get canPlayReplay(): boolean {
@@ -255,10 +304,18 @@ export class AppStore {
     }
 
     if (this.ui.selectedSource === 'serial') {
+      runInAction(() => {
+        this.setActiveSource('serial')
+        this.live.latestFrame = null
+      })
       await this.connectSerial()
       return
     }
 
+    runInAction(() => {
+      this.setActiveSource('websocket')
+      this.live.latestFrame = null
+    })
     await this.connectWebSocket()
   }
 
@@ -421,11 +478,12 @@ export class AppStore {
       return
     }
 
-    const ports = await this.api.listSerialPorts()
+    const ports = sortSerialPorts(await this.api.listSerialPorts())
     runInAction(() => {
       this.live.serialPorts = ports
-      if (!this.live.serialPath && ports.length > 0) {
-        this.live.serialPath = ports[0].path
+      const hasCurrentPort = ports.some((port) => port.path === this.live.serialPath)
+      if (!hasCurrentPort) {
+        this.live.serialPath = pickDefaultSerialPath(ports)
       }
     })
   }
@@ -445,43 +503,111 @@ export class AppStore {
   }
 
   async connectSerial(): Promise<void> {
-    if (!this.api || !this.live.serialPath) {
+    if (!this.live.serialPath) {
+      this.live.connectionStatus = {
+        state: 'error',
+        transport: 'serial',
+        message: 'Select a serial port before connecting'
+      }
       return
     }
 
-    await this.api.connectSerial({
-      path: this.live.serialPath,
-      baudRate: this.live.serialBaudRate
-    })
+    if (!this.api) {
+      this.live.connectionStatus = {
+        state: 'error',
+        transport: 'serial',
+        message: 'Live telemetry API unavailable'
+      }
+      return
+    }
 
     runInAction(() => {
-      this.ui.activeSource = 'serial'
+      this.live.connectionStatus = {
+        state: 'connecting',
+        transport: 'serial',
+        message: `Opening ${this.live.serialPath} @ ${this.live.serialBaudRate}`
+      }
     })
+
+    try {
+      await this.api.connectSerial({
+        path: this.live.serialPath,
+        baudRate: this.live.serialBaudRate
+      })
+
+      runInAction(() => {
+        this.ui.activeSource = 'serial'
+      })
+    } catch (error) {
+      runInAction(() => {
+        this.live.connectionStatus = {
+          state: 'error',
+          transport: 'serial',
+          message: toErrorMessage(error, 'Unable to open serial connection')
+        }
+      })
+    }
   }
 
   async connectWebSocket(): Promise<void> {
-    if (!this.api || !this.live.websocketUrl.trim()) {
+    const websocketUrl = this.live.websocketUrl.trim()
+    if (!websocketUrl) {
+      this.live.connectionStatus = {
+        state: 'error',
+        transport: 'websocket',
+        message: 'Enter a WebSocket URL before connecting'
+      }
       return
     }
 
-    await this.api.connectWebSocket({
-      url: this.live.websocketUrl.trim()
-    })
+    if (!this.api) {
+      this.live.connectionStatus = {
+        state: 'error',
+        transport: 'websocket',
+        message: 'Live telemetry API unavailable'
+      }
+      return
+    }
 
     runInAction(() => {
-      this.ui.activeSource = 'websocket'
+      this.live.connectionStatus = {
+        state: 'connecting',
+        transport: 'websocket',
+        message: `Opening ${websocketUrl}`
+      }
     })
+
+    try {
+      await this.api.connectWebSocket({
+        url: websocketUrl
+      })
+
+      runInAction(() => {
+        this.ui.activeSource = 'websocket'
+      })
+    } catch (error) {
+      runInAction(() => {
+        this.live.connectionStatus = {
+          state: 'error',
+          transport: 'websocket',
+          message: toErrorMessage(error, 'Unable to open WebSocket connection')
+        }
+      })
+    }
   }
 
   async disconnectLive(): Promise<void> {
     if (!this.api) {
       this.ui.activeSource = 'csv'
+      this.live.latestFrame = null
+      this.live.connectionStatus = DEFAULT_CONNECTION_STATUS
       return
     }
 
     await this.api.disconnectLive()
 
     runInAction(() => {
+      this.live.latestFrame = null
       if (this.ui.activeSource !== 'csv') {
         this.ui.activeSource = 'csv'
       }

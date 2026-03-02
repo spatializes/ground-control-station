@@ -317,7 +317,7 @@ select:focus-visible {
   padding: 12px;
   display: grid;
   gap: 10px;
-  z-index: 10;
+  z-index: 24;
 }
 
 .panel-header {
@@ -408,18 +408,33 @@ select:focus-visible {
 }
 
 .panel-close-btn {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
-  border-radius: 10px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: 999px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  font-size: 1.05rem;
+  font-size: 1.22rem;
   font-weight: 700;
+}
+
+.connection-status-detail {
+  margin: -2px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  padding-top: 8px;
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.status-detail-error {
+  color: color-mix(in srgb, #d36b6b 72%, var(--ink-soft) 28%);
 }
 
 .panel-footer-row {

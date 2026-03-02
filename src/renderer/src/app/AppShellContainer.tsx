@@ -69,7 +69,6 @@ export const AppShellContainer = observer(function AppShellContainer() {
       onSerialPathChange={store.setSerialPath}
       onSerialBaudRateChange={store.setSerialBaudRate}
       onWebSocketUrlChange={store.setWebSocketUrl}
-      onDisconnectLive={() => void store.disconnectLive()}
     />
   )
 })
