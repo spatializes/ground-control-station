@@ -131,6 +131,33 @@ describe('AppStore playback integration', () => {
     }
   })
 
+  it('fails serial connection with timeout instead of hanging forever', async () => {
+    vi.useFakeTimers()
+
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => []),
+      connectSerial: vi.fn(async () => new Promise<void>(() => undefined)),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => undefined),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api, connectTimeoutMs: 50 })
+    try {
+      store.setSerialPath('COM4')
+      const connectPromise = store.connectSerial()
+      await vi.advanceTimersByTimeAsync(80)
+      await connectPromise
+
+      expect(store.live.connectionStatus.state).toBe('error')
+      expect(store.live.connectionStatus.message).toContain('timed out')
+    } finally {
+      store.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it('switches to live wind mode and uses fetched wind snapshot', async () => {
     let nowMs = 100_000
     const windSnapshot: WindSnapshot = {

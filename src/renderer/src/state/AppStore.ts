@@ -22,6 +22,7 @@ interface AppStoreOptions {
   csvLoader?: (path: string) => Promise<TelemetryFrame[]>
   windFetcher?: (latitudeDeg: number, longitudeDeg: number) => Promise<WindSnapshot>
   now?: () => number
+  connectTimeoutMs?: number
 }
 
 interface WindCoordinates {
@@ -81,6 +82,7 @@ const DEFAULT_CONNECTION_STATUS: ConnectionStatus = {
 
 const LIVE_WIND_REFRESH_INTERVAL_MS = 45_000
 const LIVE_WIND_REFRESH_DISTANCE_M = 2_000
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to fetch live wind'
@@ -92,6 +94,24 @@ function toErrorMessage(error: unknown, fallback: string): string {
   }
 
   return fallback
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`${operationName} timed out after ${Math.floor(timeoutMs / 1000)}s`))
+    }, timeoutMs)
+
+    promise
+      .then((value) => {
+        clearTimeout(timeout)
+        resolve(value)
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timeout)
+        reject(error)
+      })
+  })
 }
 
 function formatRelativeAge(updatedAtMs: number, nowMs: number): string {
@@ -154,18 +174,21 @@ export class AppStore {
   private readonly csvLoader: (path: string) => Promise<TelemetryFrame[]>
   private readonly windFetcher: (latitudeDeg: number, longitudeDeg: number) => Promise<WindSnapshot>
   private readonly now: () => number
+  private readonly connectTimeoutMs: number
 
   private removeTelemetryListener: (() => void) | null = null
   private removeStatusListener: (() => void) | null = null
   private windRefreshTimer: ReturnType<typeof setInterval> | null = null
   private isWindFetchInFlight = false
   private lastWindFetchAttemptMs = 0
+  private connectionAttemptId = 0
 
   constructor(options: AppStoreOptions = {}) {
     this.api = options.api ?? (typeof window === 'undefined' ? null : window.gcsApi ?? null)
     this.csvLoader = options.csvLoader ?? loadCsv
     this.windFetcher = options.windFetcher ?? fetchOpenMeteoWind
     this.now = options.now ?? Date.now
+    this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
 
     makeAutoObservable(this, {}, { autoBind: true })
     this.bindLiveListeners()
@@ -296,6 +319,7 @@ export class AppStore {
 
   async activateSelectedSource(): Promise<void> {
     if (this.ui.selectedSource === 'csv') {
+      this.beginConnectionAttempt()
       await this.disconnectLive()
       runInAction(() => {
         this.ui.activeSource = 'csv'
@@ -304,25 +328,33 @@ export class AppStore {
     }
 
     if (this.ui.selectedSource === 'serial') {
+      const attemptId = this.beginConnectionAttempt()
       runInAction(() => {
         this.setActiveSource('serial')
         this.live.latestFrame = null
       })
-      await this.connectSerial()
+      await this.connectSerial(attemptId)
       return
     }
 
+    const attemptId = this.beginConnectionAttempt()
     runInAction(() => {
       this.setActiveSource('websocket')
       this.live.latestFrame = null
     })
-    await this.connectWebSocket()
+    await this.connectWebSocket(attemptId)
   }
 
   setActiveSource(source: DataSourceKind): void {
     this.ui.activeSource = source
     if (source !== 'csv') {
       this.pauseReplay()
+      return
+    }
+
+    this.live.latestFrame = null
+    this.live.connectionStatus = {
+      state: 'disconnected'
     }
   }
 
@@ -502,44 +534,62 @@ export class AppStore {
     this.live.websocketUrl = url
   }
 
-  async connectSerial(): Promise<void> {
+  async connectSerial(attemptId = this.beginConnectionAttempt()): Promise<void> {
     if (!this.live.serialPath) {
-      this.live.connectionStatus = {
-        state: 'error',
-        transport: 'serial',
-        message: 'Select a serial port before connecting'
+      if (this.isCurrentConnectionAttempt(attemptId)) {
+        this.live.connectionStatus = {
+          state: 'error',
+          transport: 'serial',
+          message: 'Select a serial port before connecting'
+        }
       }
       return
     }
 
     if (!this.api) {
-      this.live.connectionStatus = {
-        state: 'error',
-        transport: 'serial',
-        message: 'Live telemetry API unavailable'
+      if (this.isCurrentConnectionAttempt(attemptId)) {
+        this.live.connectionStatus = {
+          state: 'error',
+          transport: 'serial',
+          message: 'Live telemetry API unavailable'
+        }
       }
       return
     }
 
-    runInAction(() => {
-      this.live.connectionStatus = {
-        state: 'connecting',
-        transport: 'serial',
-        message: `Opening ${this.live.serialPath} @ ${this.live.serialBaudRate}`
-      }
-    })
+    if (this.isCurrentConnectionAttempt(attemptId)) {
+      runInAction(() => {
+        this.live.connectionStatus = {
+          state: 'connecting',
+          transport: 'serial',
+          message: `Opening ${this.live.serialPath} @ ${this.live.serialBaudRate}`
+        }
+      })
+    }
 
     try {
-      await this.api.connectSerial({
-        path: this.live.serialPath,
-        baudRate: this.live.serialBaudRate
-      })
+      await withTimeout(
+        this.api.connectSerial({
+          path: this.live.serialPath,
+          baudRate: this.live.serialBaudRate
+        }),
+        this.connectTimeoutMs,
+        'Serial connection'
+      )
 
       runInAction(() => {
+        if (!this.isCurrentConnectionAttempt(attemptId)) {
+          return
+        }
+
         this.ui.activeSource = 'serial'
       })
     } catch (error) {
       runInAction(() => {
+        if (!this.isCurrentConnectionAttempt(attemptId)) {
+          return
+        }
+
         this.live.connectionStatus = {
           state: 'error',
           transport: 'serial',
@@ -549,44 +599,62 @@ export class AppStore {
     }
   }
 
-  async connectWebSocket(): Promise<void> {
+  async connectWebSocket(attemptId = this.beginConnectionAttempt()): Promise<void> {
     const websocketUrl = this.live.websocketUrl.trim()
     if (!websocketUrl) {
-      this.live.connectionStatus = {
-        state: 'error',
-        transport: 'websocket',
-        message: 'Enter a WebSocket URL before connecting'
+      if (this.isCurrentConnectionAttempt(attemptId)) {
+        this.live.connectionStatus = {
+          state: 'error',
+          transport: 'websocket',
+          message: 'Enter a WebSocket URL before connecting'
+        }
       }
       return
     }
 
     if (!this.api) {
-      this.live.connectionStatus = {
-        state: 'error',
-        transport: 'websocket',
-        message: 'Live telemetry API unavailable'
+      if (this.isCurrentConnectionAttempt(attemptId)) {
+        this.live.connectionStatus = {
+          state: 'error',
+          transport: 'websocket',
+          message: 'Live telemetry API unavailable'
+        }
       }
       return
     }
 
-    runInAction(() => {
-      this.live.connectionStatus = {
-        state: 'connecting',
-        transport: 'websocket',
-        message: `Opening ${websocketUrl}`
-      }
-    })
+    if (this.isCurrentConnectionAttempt(attemptId)) {
+      runInAction(() => {
+        this.live.connectionStatus = {
+          state: 'connecting',
+          transport: 'websocket',
+          message: `Opening ${websocketUrl}`
+        }
+      })
+    }
 
     try {
-      await this.api.connectWebSocket({
-        url: websocketUrl
-      })
+      await withTimeout(
+        this.api.connectWebSocket({
+          url: websocketUrl
+        }),
+        this.connectTimeoutMs,
+        'WebSocket connection'
+      )
 
       runInAction(() => {
+        if (!this.isCurrentConnectionAttempt(attemptId)) {
+          return
+        }
+
         this.ui.activeSource = 'websocket'
       })
     } catch (error) {
       runInAction(() => {
+        if (!this.isCurrentConnectionAttempt(attemptId)) {
+          return
+        }
+
         this.live.connectionStatus = {
           state: 'error',
           transport: 'websocket',
@@ -597,6 +665,8 @@ export class AppStore {
   }
 
   async disconnectLive(): Promise<void> {
+    const attemptId = this.beginConnectionAttempt()
+
     if (!this.api) {
       this.ui.activeSource = 'csv'
       this.live.latestFrame = null
@@ -607,10 +677,15 @@ export class AppStore {
     await this.api.disconnectLive()
 
     runInAction(() => {
+      if (!this.isCurrentConnectionAttempt(attemptId)) {
+        return
+      }
+
       this.live.latestFrame = null
       if (this.ui.activeSource !== 'csv') {
         this.ui.activeSource = 'csv'
       }
+      this.live.connectionStatus = DEFAULT_CONNECTION_STATUS
     })
   }
 
@@ -673,8 +748,30 @@ export class AppStore {
 
     this.removeStatusListener = this.api.onConnectionStatus((status) => {
       runInAction(() => {
+        if (this.ui.activeSource === 'csv') {
+          if (status.state === 'disconnected') {
+            this.live.connectionStatus = {
+              state: 'disconnected'
+            }
+          }
+          return
+        }
+
+        if (status.transport && status.transport !== this.ui.activeSource && status.state !== 'disconnected') {
+          return
+        }
+
         this.live.connectionStatus = status
       })
     })
+  }
+
+  private beginConnectionAttempt(): number {
+    this.connectionAttemptId += 1
+    return this.connectionAttemptId
+  }
+
+  private isCurrentConnectionAttempt(attemptId: number): boolean {
+    return this.connectionAttemptId === attemptId
   }
 }
