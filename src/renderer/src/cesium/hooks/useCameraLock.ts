@@ -7,7 +7,7 @@ export function useCameraLock(
   viewer: Viewer | null,
   aircraft: Entity | null,
   isLocked: boolean,
-  frame: TelemetryFrame | null
+  _frame: TelemetryFrame | null
 ): void {
   const wasLockedRef = useRef(false)
 
@@ -27,8 +27,14 @@ export function useCameraLock(
       return
     }
 
-    // Re-assert lock on every telemetry update in case camera flight/manual operations clear tracking.
-    viewer.trackedEntity = aircraft
+    const ensureTracked = (): void => {
+      if (viewer.trackedEntity !== aircraft) {
+        viewer.trackedEntity = aircraft
+      }
+    }
+
+    // Keep lock engaged continuously so startup camera flights and manual drags do not silently break tracking.
+    ensureTracked()
 
     if (!wasLockedRef.current) {
       void viewer.flyTo(aircraft, {
@@ -37,5 +43,11 @@ export function useCameraLock(
       })
       wasLockedRef.current = true
     }
-  }, [viewer, aircraft, isLocked, frame?.timestampMs])
+
+    viewer.scene.preRender.addEventListener(ensureTracked)
+
+    return () => {
+      viewer.scene.preRender.removeEventListener(ensureTracked)
+    }
+  }, [viewer, aircraft, isLocked])
 }

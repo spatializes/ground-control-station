@@ -398,7 +398,9 @@ export function useWindLayer(
           const deltaMagnitude = Math.hypot(deltaX, deltaY)
 
           if (deltaMagnitude > 0.001) {
-            particle.rotationRad = Math.atan2(deltaY, deltaX)
+            // Cesium billboard rotation uses a math-style axis (Y up),
+            // while window coordinates use Y down.
+            particle.rotationRad = Math.atan2(-deltaY, deltaX)
           }
         }
 
