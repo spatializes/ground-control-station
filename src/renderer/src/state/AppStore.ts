@@ -1,21 +1,26 @@
 import { makeAutoObservable, runInAction } from 'mobx'
 import type {
-  ConnectionStatus,
   DataSourceKind,
   GcsApi,
-  SerialPortInfo,
   TelemetryFrame,
   ThemeMode,
   WindConfig,
-  WindFetchState,
   WindMode,
   WindSnapshot
 } from '@shared/types'
 import { loadCsv } from '../lib/csv/loadCsv'
-import { clamp } from '../lib/format'
 import { findReplayIndexAtCursor, interpolateFrame } from '../lib/telemetry/interpolateFrame'
 import { fetchOpenMeteoWind } from '../lib/wind/fetchOpenMeteoWind'
-import { haversineDistanceM } from '../lib/wind/windMath'
+import {
+  DEFAULT_CONNECT_TIMEOUT_MS,
+  LiveConnectionDomain,
+  logLiveConnection,
+  toErrorMessage,
+  withTimeout
+} from './domains/LiveConnectionDomain'
+import { PlaybackDomain } from './domains/PlaybackDomain'
+import { UiDomain } from './domains/UiDomain'
+import { LIVE_WIND_REFRESH_INTERVAL_MS, WindDomain, normalizeWindErrorMessage } from './domains/WindDomain'
 
 interface AppStoreOptions {
   api?: GcsApi | null
@@ -25,164 +30,11 @@ interface AppStoreOptions {
   connectTimeoutMs?: number
 }
 
-interface WindCoordinates {
-  latitudeDeg: number
-  longitudeDeg: number
-}
-
-function isBluetoothIncomingPath(path: string): boolean {
-  return path.toLowerCase().includes('bluetooth-incoming-port')
-}
-
-function serialPortPriority(port: SerialPortInfo): number {
-  const path = port.path.toLowerCase()
-  let priority = 0
-
-  if (path.startsWith('/dev/cu.')) {
-    priority += 30
-  } else if (path.startsWith('/dev/tty.')) {
-    priority += 20
-  }
-
-  if (path.includes('usb') || path.includes('acm') || path.includes('uart') || path.includes('serial')) {
-    priority += 40
-  }
-
-  if (isBluetoothIncomingPath(path)) {
-    priority -= 200
-  }
-
-  return priority
-}
-
-function sortSerialPorts(ports: SerialPortInfo[]): SerialPortInfo[] {
-  return [...ports].sort((left, right) => {
-    const priorityDelta = serialPortPriority(right) - serialPortPriority(left)
-    if (priorityDelta !== 0) {
-      return priorityDelta
-    }
-
-    return left.path.localeCompare(right.path)
-  })
-}
-
-function pickDefaultSerialPath(ports: SerialPortInfo[]): string {
-  const preferred = ports.find((port) => !isBluetoothIncomingPath(port.path))
-  return preferred?.path ?? ports[0]?.path ?? ''
-}
-
-const DEFAULT_WIND: WindConfig = {
-  fromDirectionDeg: 232,
-  speedMps: 9
-}
-
-const DEFAULT_CONNECTION_STATUS: ConnectionStatus = {
-  state: 'disconnected'
-}
-
-const LIVE_WIND_REFRESH_INTERVAL_MS = 45_000
-const LIVE_WIND_REFRESH_DISTANCE_M = 2_000
-const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
-
-function stringifyLogDetails(details: unknown): string {
-  if (details === undefined) {
-    return ''
-  }
-
-  try {
-    return JSON.stringify(details)
-  } catch {
-    return String(details)
-  }
-}
-
-function logLiveConnection(message: string, details?: unknown): void {
-  const detailsText = stringifyLogDetails(details)
-  console.info(detailsText.length > 0 ? `[live-ui] ${message} ${detailsText}` : `[live-ui] ${message}`)
-}
-
-function normalizeErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unable to fetch live wind'
-}
-
-function toErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message
-  }
-
-  return fallback
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operationName: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error(`${operationName} timed out after ${Math.floor(timeoutMs / 1000)}s`))
-    }, timeoutMs)
-
-    promise
-      .then((value) => {
-        clearTimeout(timeout)
-        resolve(value)
-      })
-      .catch((error: unknown) => {
-        clearTimeout(timeout)
-        reject(error)
-      })
-  })
-}
-
-function formatRelativeAge(updatedAtMs: number, nowMs: number): string {
-  const elapsedSeconds = Math.max(0, Math.floor((nowMs - updatedAtMs) / 1000))
-
-  if (elapsedSeconds < 60) {
-    return `${elapsedSeconds}s ago`
-  }
-
-  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
-  if (elapsedMinutes < 60) {
-    return `${elapsedMinutes}m ago`
-  }
-
-  const elapsedHours = Math.floor(elapsedMinutes / 60)
-  return `${elapsedHours}h ago`
-}
-
 export class AppStore {
-  readonly playback = {
-    frames: [] as TelemetryFrame[],
-    cursorMs: 0,
-    isPlaying: false,
-    speedMultiplier: 10
-  }
-
-  readonly ui = {
-    activeSource: 'csv' as DataSourceKind,
-    selectedSource: 'csv' as DataSourceKind,
-    cameraLocked: true,
-    theme: 'light' as ThemeMode,
-    isConnectionPanelOpen: false,
-    isAltitudeProfileCollapsed: false,
-    windPanelOpen: false
-  }
-
-  readonly live = {
-    connectionStatus: DEFAULT_CONNECTION_STATUS,
-    latestFrame: null as TelemetryFrame | null,
-    serialPorts: [] as SerialPortInfo[],
-    serialPath: '',
-    serialBaudRate: 115200,
-    websocketUrl: 'ws://127.0.0.1:14550'
-  }
-
-  readonly wind = {
-    enabled: true,
-    mode: 'synthetic' as WindMode,
-    synthetic: { ...DEFAULT_WIND },
-    liveSnapshot: null as WindSnapshot | null,
-    fetchState: 'idle' as WindFetchState,
-    fetchError: '',
-    lastFetchCoords: null as WindCoordinates | null
-  }
+  readonly playback = new PlaybackDomain()
+  readonly ui = new UiDomain()
+  readonly live = new LiveConnectionDomain()
+  readonly wind = new WindDomain()
 
   loadState: 'idle' | 'loading' | 'ready' | 'error' = 'idle'
   loadError = ''
@@ -196,10 +48,6 @@ export class AppStore {
   private removeTelemetryListener: (() => void) | null = null
   private removeStatusListener: (() => void) | null = null
   private windRefreshTimer: ReturnType<typeof setInterval> | null = null
-  private isWindFetchInFlight = false
-  private lastWindFetchAttemptMs = 0
-  private connectionAttemptId = 0
-  private hasLoggedFirstLiveFrame = false
   private hasStarted = false
 
   constructor(options: AppStoreOptions = {}) {
@@ -209,7 +57,16 @@ export class AppStore {
     this.now = options.now ?? Date.now
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
 
-    makeAutoObservable(this, {}, { autoBind: true })
+    makeAutoObservable(
+      this,
+      {
+        playback: false,
+        ui: false,
+        live: false,
+        wind: false
+      },
+      { autoBind: true }
+    )
   }
 
   start(): void {
@@ -223,19 +80,11 @@ export class AppStore {
   }
 
   get replayDurationMs(): number {
-    if (this.playback.frames.length < 2) {
-      return 0
-    }
-
-    return this.playback.frames[this.playback.frames.length - 1].timestampMs - this.playback.frames[0].timestampMs
+    return this.playback.durationMs
   }
 
   get replayProgress(): number {
-    if (this.replayDurationMs <= 0) {
-      return 0
-    }
-
-    return this.playback.cursorMs / this.replayDurationMs
+    return this.playback.progress
   }
 
   get currentReplayIndex(): number {
@@ -259,52 +108,19 @@ export class AppStore {
   }
 
   get effectiveWind(): WindConfig {
-    if (this.wind.mode === 'live' && this.wind.liveSnapshot) {
-      return {
-        fromDirectionDeg: this.wind.liveSnapshot.fromDirectionDeg,
-        speedMps: this.wind.liveSnapshot.speedMps
-      }
-    }
-
-    return {
-      fromDirectionDeg: this.wind.synthetic.fromDirectionDeg,
-      speedMps: this.wind.synthetic.speedMps
-    }
+    return this.wind.effectiveWind
   }
 
   get effectiveWindLabel(): string {
-    const wind = this.effectiveWind
-    return `Wind ${wind.fromDirectionDeg.toFixed(0)}° @ ${wind.speedMps.toFixed(1)} m/s`
+    return this.wind.formatLabel()
   }
 
   get windModeBadge(): 'SYN' | 'LIVE' {
-    return this.wind.mode === 'live' ? 'LIVE' : 'SYN'
+    return this.wind.modeBadge
   }
 
   get windStatusText(): string {
-    if (!this.wind.enabled) {
-      return 'Wind overlay is off'
-    }
-
-    if (this.wind.mode === 'synthetic') {
-      return 'Using synthetic global wind'
-    }
-
-    if (this.wind.fetchState === 'loading') {
-      return this.wind.liveSnapshot ? 'Updating live wind...' : 'Fetching live wind...'
-    }
-
-    if (this.wind.fetchState === 'error') {
-      return this.wind.liveSnapshot
-        ? `Live fetch failed, showing last good update (${formatRelativeAge(this.wind.liveSnapshot.updatedAtMs, this.now())})`
-        : 'Live unavailable, using synthetic wind'
-    }
-
-    if (this.wind.liveSnapshot) {
-      return `Live updated ${formatRelativeAge(this.wind.liveSnapshot.updatedAtMs, this.now())}`
-    }
-
-    return 'Waiting for first live wind update'
+    return this.wind.formatStatus(this.now())
   }
 
   async initializeReplay(): Promise<void> {
@@ -336,66 +152,60 @@ export class AppStore {
   }
 
   setReplayFrames(frames: TelemetryFrame[]): void {
-    this.playback.frames = frames
-    this.playback.cursorMs = 0
-    this.playback.isPlaying = false
+    this.playback.setFrames(frames)
   }
 
   setSelectedSource(source: DataSourceKind): void {
-    this.ui.selectedSource = source
+    this.ui.setSelectedSource(source)
   }
 
   async activateSelectedSource(): Promise<void> {
     if (this.ui.selectedSource === 'csv') {
-      this.beginConnectionAttempt()
-      await this.disconnectLive()
-      runInAction(() => {
-        this.ui.activeSource = 'csv'
-      })
+      const attemptId = this.live.beginConnectionAttempt()
+      const didDisconnect = await this.disconnectLiveByAttempt(attemptId)
+      if (!didDisconnect) {
+        return
+      }
+
+      this.ui.setActiveSource('csv')
       return
     }
 
     if (this.ui.selectedSource === 'serial') {
-      const attemptId = this.beginConnectionAttempt()
-      runInAction(() => {
-        this.setActiveSource('serial')
-        this.live.latestFrame = null
-      })
+      const attemptId = this.live.beginConnectionAttempt()
+      this.setActiveSource('serial')
+      this.live.markLatestFrame(null)
       await this.connectSerial(attemptId)
       return
     }
 
-    const attemptId = this.beginConnectionAttempt()
-    runInAction(() => {
-      this.setActiveSource('websocket')
-      this.live.latestFrame = null
-    })
+    const attemptId = this.live.beginConnectionAttempt()
+    this.setActiveSource('websocket')
+    this.live.markLatestFrame(null)
     await this.connectWebSocket(attemptId)
   }
 
   setActiveSource(source: DataSourceKind): void {
-    this.ui.activeSource = source
+    this.ui.setActiveSource(source)
     if (source !== 'csv') {
       this.pauseReplay()
       return
     }
 
-    this.live.latestFrame = null
-    this.live.connectionStatus = {
-      state: 'disconnected'
-    }
+    this.live.markLatestFrame(null)
+    this.live.markDisconnected()
   }
 
   setConnectionPanelOpen(isOpen: boolean): void {
-    this.ui.isConnectionPanelOpen = isOpen
+    this.ui.setConnectionPanelOpen(isOpen)
   }
 
   setWindPanelOpen(isOpen: boolean): void {
-    this.ui.windPanelOpen = isOpen
+    this.ui.setWindPanelOpen(isOpen)
   }
 
   setAltitudeProfileCollapsed(isCollapsed: boolean): void {
-    this.ui.isAltitudeProfileCollapsed = isCollapsed
+    this.ui.setAltitudeProfileCollapsed(isCollapsed)
   }
 
   scrubReplayByProgress(progress: number): void {
@@ -408,35 +218,34 @@ export class AppStore {
   }
 
   setTheme(theme: ThemeMode): void {
-    this.ui.theme = theme
+    this.ui.setTheme(theme)
   }
 
   setCameraLocked(isLocked: boolean): void {
-    this.ui.cameraLocked = isLocked
+    this.ui.setCameraLocked(isLocked)
   }
 
   setSpeedMultiplier(multiplier: number): void {
-    this.playback.speedMultiplier = clamp(multiplier, 0.25, 10)
+    this.playback.setSpeedMultiplier(multiplier)
   }
 
   setWindEnabled(enabled: boolean): void {
-    this.wind.enabled = enabled
+    this.wind.setEnabled(enabled)
 
     if (enabled && this.wind.mode === 'live') {
-      void this.refreshLiveWindForCurrentFrame(true)
+      this.queueLiveWindRefreshForCurrentFrame(true, 'setWindEnabled')
     }
   }
 
   setWindMode(mode: WindMode): void {
-    this.wind.mode = mode
+    this.wind.setMode(mode)
 
     if (mode === 'synthetic') {
-      this.wind.fetchState = 'idle'
-      this.wind.fetchError = ''
+      this.wind.setSyntheticModeIdle()
       return
     }
 
-    void this.refreshLiveWindForCurrentFrame(true)
+    this.queueLiveWindRefreshForCurrentFrame(true, 'setWindMode')
   }
 
   toggleReplay(): void {
@@ -449,51 +258,28 @@ export class AppStore {
   }
 
   playReplay(): void {
-    if (!this.canPlayReplay) {
-      return
-    }
-
-    if (this.playback.cursorMs >= this.replayDurationMs) {
-      this.playback.cursorMs = 0
-    }
-
-    this.playback.isPlaying = true
+    this.playback.play(this.canPlayReplay)
   }
 
   pauseReplay(): void {
-    this.playback.isPlaying = false
+    this.playback.pause()
   }
 
   seekReplayProgress(progress: number): void {
-    if (this.playback.frames.length < 2) {
-      return
-    }
-
-    const clampedProgress = clamp(progress, 0, 1)
-    this.playback.cursorMs = this.replayDurationMs * clampedProgress
-    void this.refreshLiveWindForCurrentFrame(false)
+    this.playback.seekProgress(progress)
+    this.queueLiveWindRefreshForCurrentFrame(false, 'seekReplayProgress')
   }
 
   advancePlaybackBy(deltaMs: number): void {
-    if (!this.playback.isPlaying || this.playback.frames.length < 2) {
-      return
+    const { reachedEnd } = this.playback.advanceBy(deltaMs)
+
+    if (reachedEnd || this.playback.isPlaying) {
+      this.queueLiveWindRefreshForCurrentFrame(false, 'advancePlaybackBy')
     }
-
-    const nextCursorMs = this.playback.cursorMs + deltaMs * this.playback.speedMultiplier
-
-    if (nextCursorMs >= this.replayDurationMs) {
-      this.playback.cursorMs = this.replayDurationMs
-      this.pauseReplay()
-      void this.refreshLiveWindForCurrentFrame(false)
-      return
-    }
-
-    this.playback.cursorMs = Math.max(0, nextCursorMs)
-    void this.refreshLiveWindForCurrentFrame(false)
   }
 
   async refreshLiveWindForFrame(frame: TelemetryFrame | null, force = false): Promise<void> {
-    if (!frame || !this.isLiveWindActive || this.isWindFetchInFlight) {
+    if (!frame || !this.wind.isLiveWindActive() || this.wind.isFetchInFlight) {
       return
     }
 
@@ -502,38 +288,26 @@ export class AppStore {
     }
 
     const nowMs = this.now()
-    if (!force && !this.shouldRefreshLiveWind(frame, nowMs)) {
+    if (!this.wind.shouldRefresh(frame, nowMs, force)) {
       return
     }
 
-    this.isWindFetchInFlight = true
-    this.lastWindFetchAttemptMs = nowMs
-    this.wind.fetchState = 'loading'
-    this.wind.fetchError = ''
+    this.wind.beginFetch(nowMs)
 
     try {
       const snapshot = await this.windFetcher(frame.latitudeDeg, frame.longitudeDeg)
 
       runInAction(() => {
-        this.wind.liveSnapshot = snapshot
-        this.wind.fetchState = 'ready'
-        this.wind.fetchError = ''
-        this.wind.lastFetchCoords = {
-          latitudeDeg: frame.latitudeDeg,
-          longitudeDeg: frame.longitudeDeg
-        }
+        this.wind.completeFetchSuccess(snapshot, frame)
       })
     } catch (error) {
       runInAction(() => {
-        this.wind.fetchState = 'error'
-        this.wind.fetchError = normalizeErrorMessage(error)
-        this.wind.lastFetchCoords = {
-          latitudeDeg: frame.latitudeDeg,
-          longitudeDeg: frame.longitudeDeg
-        }
+        this.wind.completeFetchError(normalizeWindErrorMessage(error), frame)
       })
     } finally {
-      this.isWindFetchInFlight = false
+      runInAction(() => {
+        this.wind.endFetch()
+      })
     }
   }
 
@@ -542,31 +316,39 @@ export class AppStore {
       return
     }
 
-    const ports = sortSerialPorts(await this.api.listSerialPorts())
-    runInAction(() => {
-      this.live.serialPorts = ports
-      const hasCurrentPort = ports.some((port) => port.path === this.live.serialPath)
-      if (!hasCurrentPort) {
-        this.live.serialPath = pickDefaultSerialPath(ports)
-      }
-    })
-  }
-
-  setSerialPath(path: string): void {
-    this.live.serialPath = path
-  }
-
-  setSerialBaudRate(baudRate: number): void {
-    if (Number.isFinite(baudRate) && baudRate > 0) {
-      this.live.serialBaudRate = baudRate
+    try {
+      const ports = await this.api.listSerialPorts()
+      runInAction(() => {
+        this.live.setSerialPorts(ports)
+      })
+    } catch (error) {
+      const message = toErrorMessage(error, 'Unable to list serial ports')
+      runInAction(() => {
+        this.live.setConnectionStatus({
+          state: 'error',
+          transport: 'serial',
+          message
+        })
+      })
+      logLiveConnection('Serial port refresh failed', {
+        error: message
+      })
     }
   }
 
-  setWebSocketUrl(url: string): void {
-    this.live.websocketUrl = url
+  setSerialPath(path: string): void {
+    this.live.setSerialPath(path)
   }
 
-  async connectSerial(attemptId = this.beginConnectionAttempt()): Promise<void> {
+  setSerialBaudRate(baudRate: number): void {
+    this.live.setSerialBaudRate(baudRate)
+  }
+
+  setWebSocketUrl(url: string): void {
+    this.live.setWebSocketUrl(url)
+  }
+
+  async connectSerial(attemptId = this.live.beginConnectionAttempt()): Promise<void> {
     logLiveConnection('Starting serial connect attempt', {
       attemptId,
       selectedPath: this.live.serialPath,
@@ -574,12 +356,12 @@ export class AppStore {
     })
 
     if (!this.api) {
-      if (this.isCurrentConnectionAttempt(attemptId)) {
-        this.live.connectionStatus = {
+      if (this.live.isCurrentConnectionAttempt(attemptId)) {
+        this.live.setConnectionStatus({
           state: 'error',
           transport: 'serial',
           message: 'Live telemetry API unavailable'
-        }
+        })
       }
       return
     }
@@ -594,13 +376,11 @@ export class AppStore {
       const path = this.live.serialPath
       const baudRate = this.live.serialBaudRate
 
-      if (this.isCurrentConnectionAttempt(attemptId)) {
-        runInAction(() => {
-          this.live.connectionStatus = {
-            state: 'connecting',
-            transport: 'serial',
-            message: `Opening ${path} @ ${baudRate}`
-          }
+      if (this.live.isCurrentConnectionAttempt(attemptId)) {
+        this.live.setConnectionStatus({
+          state: 'connecting',
+          transport: 'serial',
+          message: `Opening ${path} @ ${baudRate}`
         })
       }
 
@@ -616,20 +396,20 @@ export class AppStore {
       )
 
       runInAction(() => {
-        if (!this.isCurrentConnectionAttempt(attemptId)) {
+        if (!this.live.isCurrentConnectionAttempt(attemptId)) {
           return
         }
 
-        this.ui.activeSource = 'serial'
+        this.ui.setActiveSource('serial')
 
         // Fallback when IPC status events are delayed or dropped.
         if (this.live.connectionStatus.state === 'connecting') {
-          this.live.connectionStatus = {
+          this.live.setConnectionStatus({
             state: 'connected',
             transport: 'serial',
             mavlinkState: 'none',
             message: `Serial connected on ${path}; waiting for MAVLink packets`
-          }
+          })
         }
       })
 
@@ -640,15 +420,15 @@ export class AppStore {
       })
     } catch (error) {
       runInAction(() => {
-        if (!this.isCurrentConnectionAttempt(attemptId)) {
+        if (!this.live.isCurrentConnectionAttempt(attemptId)) {
           return
         }
 
-        this.live.connectionStatus = {
+        this.live.setConnectionStatus({
           state: 'error',
           transport: 'serial',
           message: toErrorMessage(error, 'Unable to open serial connection')
-        }
+        })
       })
 
       logLiveConnection('Serial connect failed', {
@@ -658,37 +438,35 @@ export class AppStore {
     }
   }
 
-  async connectWebSocket(attemptId = this.beginConnectionAttempt()): Promise<void> {
+  async connectWebSocket(attemptId = this.live.beginConnectionAttempt()): Promise<void> {
     const websocketUrl = this.live.websocketUrl.trim()
     if (!websocketUrl) {
-      if (this.isCurrentConnectionAttempt(attemptId)) {
-        this.live.connectionStatus = {
+      if (this.live.isCurrentConnectionAttempt(attemptId)) {
+        this.live.setConnectionStatus({
           state: 'error',
           transport: 'websocket',
           message: 'Enter a WebSocket URL before connecting'
-        }
+        })
       }
       return
     }
 
     if (!this.api) {
-      if (this.isCurrentConnectionAttempt(attemptId)) {
-        this.live.connectionStatus = {
+      if (this.live.isCurrentConnectionAttempt(attemptId)) {
+        this.live.setConnectionStatus({
           state: 'error',
           transport: 'websocket',
           message: 'Live telemetry API unavailable'
-        }
+        })
       }
       return
     }
 
-    if (this.isCurrentConnectionAttempt(attemptId)) {
-      runInAction(() => {
-        this.live.connectionStatus = {
-          state: 'connecting',
-          transport: 'websocket',
-          message: `Opening ${websocketUrl}`
-        }
+    if (this.live.isCurrentConnectionAttempt(attemptId)) {
+      this.live.setConnectionStatus({
+        state: 'connecting',
+        transport: 'websocket',
+        message: `Opening ${websocketUrl}`
       })
     }
 
@@ -704,20 +482,20 @@ export class AppStore {
       )
 
       runInAction(() => {
-        if (!this.isCurrentConnectionAttempt(attemptId)) {
+        if (!this.live.isCurrentConnectionAttempt(attemptId)) {
           return
         }
 
-        this.ui.activeSource = 'websocket'
+        this.ui.setActiveSource('websocket')
 
         // Fallback when IPC status events are delayed or dropped.
         if (this.live.connectionStatus.state === 'connecting') {
-          this.live.connectionStatus = {
+          this.live.setConnectionStatus({
             state: 'connected',
             transport: 'websocket',
             mavlinkState: 'none',
             message: `WebSocket connected to ${websocketUrl}; waiting for MAVLink packets`
-          }
+          })
         }
       })
 
@@ -728,15 +506,15 @@ export class AppStore {
       })
     } catch (error) {
       runInAction(() => {
-        if (!this.isCurrentConnectionAttempt(attemptId)) {
+        if (!this.live.isCurrentConnectionAttempt(attemptId)) {
           return
         }
 
-        this.live.connectionStatus = {
+        this.live.setConnectionStatus({
           state: 'error',
           transport: 'websocket',
           message: toErrorMessage(error, 'Unable to open WebSocket connection')
-        }
+        })
       })
 
       logLiveConnection('WebSocket connect failed', {
@@ -747,62 +525,74 @@ export class AppStore {
   }
 
   async disconnectLive(): Promise<void> {
-    const attemptId = this.beginConnectionAttempt()
+    const attemptId = this.live.beginConnectionAttempt()
+    await this.disconnectLiveByAttempt(attemptId)
+  }
 
+  private async disconnectLiveByAttempt(attemptId: number): Promise<boolean> {
     if (!this.api) {
-      this.ui.activeSource = 'csv'
-      this.live.latestFrame = null
-      this.live.connectionStatus = DEFAULT_CONNECTION_STATUS
-      return
-    }
-
-    await this.api.disconnectLive()
-
-    runInAction(() => {
-      if (!this.isCurrentConnectionAttempt(attemptId)) {
-        return
-      }
-
-      this.live.latestFrame = null
-      if (this.ui.activeSource !== 'csv') {
-        this.ui.activeSource = 'csv'
-      }
-      this.live.connectionStatus = DEFAULT_CONNECTION_STATUS
-    })
-  }
-
-  private get isLiveWindActive(): boolean {
-    return this.wind.enabled && this.wind.mode === 'live'
-  }
-
-  private shouldRefreshLiveWind(frame: TelemetryFrame, nowMs: number): boolean {
-    const lastUpdateMs = this.wind.liveSnapshot?.updatedAtMs ?? 0
-    const referenceMs = Math.max(lastUpdateMs, this.lastWindFetchAttemptMs)
-    const hasElapsedInterval = nowMs - referenceMs >= LIVE_WIND_REFRESH_INTERVAL_MS
-
-    if (!this.wind.lastFetchCoords) {
+      this.ui.setActiveSource('csv')
+      this.live.markLatestFrame(null)
+      this.live.markDisconnected()
       return true
     }
 
-    const movedDistanceM = haversineDistanceM(
-      this.wind.lastFetchCoords.latitudeDeg,
-      this.wind.lastFetchCoords.longitudeDeg,
-      frame.latitudeDeg,
-      frame.longitudeDeg
-    )
+    try {
+      await this.api.disconnectLive()
+    } catch (error) {
+      const message = toErrorMessage(error, 'Unable to disconnect live connection')
+      runInAction(() => {
+        if (!this.live.isCurrentConnectionAttempt(attemptId)) {
+          return
+        }
 
-    return hasElapsedInterval || movedDistanceM >= LIVE_WIND_REFRESH_DISTANCE_M
+        this.live.setConnectionStatus({
+          state: 'error',
+          transport: this.ui.activeSource === 'websocket' ? 'websocket' : 'serial',
+          message
+        })
+      })
+
+      logLiveConnection('Disconnect live failed', {
+        attemptId,
+        error: message
+      })
+      return false
+    }
+
+    runInAction(() => {
+      if (!this.live.isCurrentConnectionAttempt(attemptId)) {
+        return
+      }
+
+      this.live.markLatestFrame(null)
+      if (this.ui.activeSource !== 'csv') {
+        this.ui.setActiveSource('csv')
+      }
+      this.live.markDisconnected()
+    })
+
+    return true
   }
 
-  private async refreshLiveWindForCurrentFrame(force: boolean): Promise<void> {
-    await this.refreshLiveWindForFrame(this.currentFrame, force)
+  private queueLiveWindRefreshForCurrentFrame(force: boolean, reason: string): void {
+    this.queueLiveWindRefreshForFrame(this.currentFrame, force, reason)
+  }
+
+  private queueLiveWindRefreshForFrame(frame: TelemetryFrame | null, force: boolean, reason: string): void {
+    void this.refreshLiveWindForFrame(frame, force).catch((error) => {
+      logLiveConnection('Unexpected live wind refresh failure', {
+        reason,
+        error: toErrorMessage(error, 'Unknown live wind refresh error')
+      })
+    })
   }
 
   private startWindRefreshLoop(): void {
     this.stopWindRefreshLoop()
 
     this.windRefreshTimer = setInterval(() => {
-      void this.refreshLiveWindForCurrentFrame(false)
+      this.queueLiveWindRefreshForCurrentFrame(false, 'refresh-loop')
     }, LIVE_WIND_REFRESH_INTERVAL_MS)
   }
 
@@ -822,11 +612,11 @@ export class AppStore {
 
     this.removeTelemetryListener = this.api.onLiveTelemetry((frame) => {
       runInAction(() => {
-        this.live.latestFrame = frame
+        this.live.markLatestFrame(frame)
       })
 
-      if (!this.hasLoggedFirstLiveFrame) {
-        this.hasLoggedFirstLiveFrame = true
+      if (!this.live.hasLoggedFirstLiveFrame) {
+        this.live.markFirstLiveFrameLogged()
         logLiveConnection('Received first live frame in renderer', {
           source: this.ui.activeSource,
           hasPositionFix: frame.hasPositionFix !== false,
@@ -836,7 +626,7 @@ export class AppStore {
         })
       }
 
-      void this.refreshLiveWindForFrame(frame, false)
+      this.queueLiveWindRefreshForFrame(frame, false, 'live-telemetry')
     })
 
     this.removeStatusListener = this.api.onConnectionStatus((status) => {
@@ -848,9 +638,7 @@ export class AppStore {
       runInAction(() => {
         if (this.ui.activeSource === 'csv') {
           if (status.state === 'disconnected') {
-            this.live.connectionStatus = {
-              state: 'disconnected'
-            }
+            this.live.markDisconnected()
           }
           return
         }
@@ -863,18 +651,8 @@ export class AppStore {
           return
         }
 
-        this.live.connectionStatus = status
+        this.live.setConnectionStatus(status)
       })
     })
-  }
-
-  private beginConnectionAttempt(): number {
-    this.connectionAttemptId += 1
-    this.hasLoggedFirstLiveFrame = false
-    return this.connectionAttemptId
-  }
-
-  private isCurrentConnectionAttempt(attemptId: number): boolean {
-    return this.connectionAttemptId === attemptId
   }
 }

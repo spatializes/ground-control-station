@@ -5,6 +5,12 @@ import { usePlaybackClock } from '../hooks/usePlaybackClock'
 import { useThemeClass } from '../hooks/useThemeClass'
 import { AppShellView } from './AppShellView'
 
+function runAsyncTask(task: Promise<void>, context: string): void {
+  void task.catch((error) => {
+    console.error(`[app-shell] ${context}`, error)
+  })
+}
+
 export const AppShellContainer = observer(function AppShellContainer() {
   const store = useMemo(() => new AppStore(), [])
 
@@ -13,8 +19,8 @@ export const AppShellContainer = observer(function AppShellContainer() {
 
   useEffect(() => {
     store.start()
-    void store.initializeReplay()
-    void store.refreshSerialPorts()
+    runAsyncTask(store.initializeReplay(), 'Failed to initialize replay')
+    runAsyncTask(store.refreshSerialPorts(), 'Failed to refresh serial ports on startup')
 
     return () => {
       store.dispose()
@@ -23,54 +29,78 @@ export const AppShellContainer = observer(function AppShellContainer() {
 
   return (
     <AppShellView
-      loadState={store.loadState}
-      loadError={store.loadError}
-      frame={store.currentFrame}
-      replayFrames={store.playback.frames}
-      replayIndex={store.currentReplayIndex}
-      replayDurationMs={store.replayDurationMs}
-      replayProgress={store.replayProgress}
-      isPlaying={store.playback.isPlaying}
-      speedMultiplier={store.playback.speedMultiplier}
-      activeSource={store.ui.activeSource}
-      selectedSource={store.ui.selectedSource}
-      cameraLocked={store.ui.cameraLocked}
-      theme={store.ui.theme}
-      isConnectionPanelOpen={store.ui.isConnectionPanelOpen}
-      isAltitudeProfileCollapsed={store.ui.isAltitudeProfileCollapsed}
-      wind={store.effectiveWind}
-      windLabel={store.effectiveWindLabel}
-      windEnabled={store.wind.enabled}
-      windMode={store.wind.mode}
-      windModeBadge={store.windModeBadge}
-      windFetchState={store.wind.fetchState}
-      windStatusText={store.windStatusText}
-      isWindPanelOpen={store.ui.windPanelOpen}
-      connectionStatus={store.live.connectionStatus}
-      serialPorts={store.live.serialPorts}
-      serialPath={store.live.serialPath}
-      serialBaudRate={store.live.serialBaudRate}
-      websocketUrl={store.live.websocketUrl}
-      onSelectedSourceChange={store.setSelectedSource}
-      onActivateSource={() => void store.activateSelectedSource()}
-      onThemeChange={store.setTheme}
-      onCameraLockToggle={() => store.setCameraLocked(!store.ui.cameraLocked)}
-      onConnectionPanelToggle={() => store.setConnectionPanelOpen(!store.ui.isConnectionPanelOpen)}
-      onConnectionPanelClose={() => store.setConnectionPanelOpen(false)}
-      onWindPanelToggle={() => store.setWindPanelOpen(!store.ui.windPanelOpen)}
-      onWindPanelClose={() => store.setWindPanelOpen(false)}
-      onWindEnabledChange={store.setWindEnabled}
-      onWindModeChange={store.setWindMode}
-      onAltitudeProfileToggle={() => store.setAltitudeProfileCollapsed(!store.ui.isAltitudeProfileCollapsed)}
-      onTogglePlay={store.toggleReplay}
-      onSeekReplay={store.seekReplayProgress}
-      onHoverScrubReplay={store.scrubReplayByProgress}
-      onSpeedChange={store.setSpeedMultiplier}
-      onRefreshSerialPorts={() => void store.refreshSerialPorts()}
-      onSerialPathChange={store.setSerialPath}
-      onSerialBaudRateChange={store.setSerialBaudRate}
-      onWebSocketUrlChange={store.setWebSocketUrl}
-      onDisconnectSource={() => void store.disconnectLive()}
+      state={{
+        load: {
+          state: store.loadState,
+          error: store.loadError
+        },
+        scene: {
+          frame: store.currentFrame,
+          cameraLocked: store.ui.cameraLocked,
+          theme: store.ui.theme,
+          activeSource: store.ui.activeSource
+        },
+        replay: {
+          frames: store.playback.frames,
+          index: store.currentReplayIndex,
+          durationMs: store.replayDurationMs,
+          progress: store.replayProgress,
+          isPlaying: store.playback.isPlaying,
+          speedMultiplier: store.playback.speedMultiplier
+        },
+        ui: {
+          isConnectionPanelOpen: store.ui.isConnectionPanelOpen,
+          isAltitudeProfileCollapsed: store.ui.isAltitudeProfileCollapsed,
+          isWindPanelOpen: store.ui.windPanelOpen
+        },
+        wind: {
+          config: store.effectiveWind,
+          label: store.effectiveWindLabel,
+          enabled: store.wind.enabled,
+          mode: store.wind.mode,
+          modeBadge: store.windModeBadge,
+          fetchState: store.wind.fetchState,
+          statusText: store.windStatusText
+        },
+        connection: {
+          status: store.live.connectionStatus,
+          selectedSource: store.ui.selectedSource,
+          serialPorts: store.live.serialPorts,
+          serialPath: store.live.serialPath,
+          serialBaudRate: store.live.serialBaudRate,
+          websocketUrl: store.live.websocketUrl
+        }
+      }}
+      actions={{
+        source: {
+          setSelectedSource: store.setSelectedSource,
+          activateSelectedSource: () => runAsyncTask(store.activateSelectedSource(), 'Failed to activate source'),
+          disconnectLive: () => runAsyncTask(store.disconnectLive(), 'Failed to disconnect source'),
+          refreshSerialPorts: () => runAsyncTask(store.refreshSerialPorts(), 'Failed to refresh serial ports'),
+          setSerialPath: store.setSerialPath,
+          setSerialBaudRate: store.setSerialBaudRate,
+          setWebSocketUrl: store.setWebSocketUrl
+        },
+        wind: {
+          setEnabled: store.setWindEnabled,
+          setMode: store.setWindMode,
+          togglePanel: () => store.setWindPanelOpen(!store.ui.windPanelOpen),
+          closePanel: () => store.setWindPanelOpen(false)
+        },
+        replay: {
+          togglePlay: store.toggleReplay,
+          seekReplayProgress: store.seekReplayProgress,
+          hoverScrubReplay: store.scrubReplayByProgress,
+          setSpeedMultiplier: store.setSpeedMultiplier
+        },
+        ui: {
+          setTheme: store.setTheme,
+          toggleCameraLock: () => store.setCameraLocked(!store.ui.cameraLocked),
+          toggleConnectionPanel: () => store.setConnectionPanelOpen(!store.ui.isConnectionPanelOpen),
+          closeConnectionPanel: () => store.setConnectionPanelOpen(false),
+          toggleAltitudeProfile: () => store.setAltitudeProfileCollapsed(!store.ui.isAltitudeProfileCollapsed)
+        }
+      }}
     />
   )
 })

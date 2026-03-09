@@ -41,6 +41,23 @@ async function waitForCondition(condition: () => boolean, timeoutMs = 500): Prom
   }
 }
 
+async function expectNoUnhandledRejection(run: () => void, waitMs = 0): Promise<void> {
+  const unhandled: unknown[] = []
+  const handler = (reason: unknown): void => {
+    unhandled.push(reason)
+  }
+
+  process.on('unhandledRejection', handler)
+
+  try {
+    run()
+    await new Promise((resolve) => setTimeout(resolve, waitMs))
+    expect(unhandled).toHaveLength(0)
+  } finally {
+    process.off('unhandledRejection', handler)
+  }
+}
+
 describe('AppStore playback integration', () => {
   it('plays, advances, and pauses replay', () => {
     const store = new AppStore({ api: null })
@@ -340,6 +357,142 @@ describe('AppStore playback integration', () => {
       )
 
       expect(windFetcher).not.toHaveBeenCalled()
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('captures serial port refresh failures without rejecting', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => {
+        throw new Error('scan failed')
+      }),
+      connectSerial: vi.fn(async () => undefined),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => undefined),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      await expect(store.refreshSerialPorts()).resolves.toBeUndefined()
+      expect(store.live.connectionStatus.state).toBe('error')
+      expect(store.live.connectionStatus.transport).toBe('serial')
+      expect(store.live.connectionStatus.message).toContain('scan failed')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('keeps live source active and reports error when disconnect fails', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => [{ path: 'COM4' }]),
+      connectSerial: vi.fn(async () => undefined),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => {
+        throw new Error('disconnect failed')
+      }),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      store.setActiveSource('serial')
+      await expect(store.disconnectLive()).resolves.toBeUndefined()
+      expect(store.ui.activeSource).toBe('serial')
+      expect(store.live.connectionStatus.state).toBe('error')
+      expect(store.live.connectionStatus.transport).toBe('serial')
+      expect(store.live.connectionStatus.message).toContain('disconnect failed')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('keeps current live source when switching to CSV and disconnect fails', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => [{ path: 'COM4' }]),
+      connectSerial: vi.fn(async () => undefined),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => {
+        throw new Error('disconnect failed')
+      }),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      store.setActiveSource('serial')
+      store.setSelectedSource('csv')
+
+      await expect(store.activateSelectedSource()).resolves.toBeUndefined()
+
+      expect(store.ui.activeSource).toBe('serial')
+      expect(store.live.connectionStatus.state).toBe('error')
+      expect(store.live.connectionStatus.transport).toBe('serial')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('captures connect failures during source activation without rejecting', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => [{ path: 'COM4' }]),
+      connectSerial: vi.fn(async () => {
+        throw new Error('serial open denied')
+      }),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => undefined),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      store.setSelectedSource('serial')
+      await expect(store.activateSelectedSource()).resolves.toBeUndefined()
+      expect(store.ui.activeSource).toBe('serial')
+      expect(store.live.connectionStatus.state).toBe('error')
+      expect(store.live.connectionStatus.transport).toBe('serial')
+      expect(store.live.connectionStatus.message).toContain('serial open denied')
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('does not emit unhandled rejections from UI fire-and-forget paths', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => {
+        throw new Error('scan failed')
+      }),
+      connectSerial: vi.fn(async () => {
+        throw new Error('serial open denied')
+      }),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => {
+        throw new Error('disconnect failed')
+      }),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      await expectNoUnhandledRejection(() => {
+        void store.refreshSerialPorts()
+      })
+
+      store.setActiveSource('serial')
+      await expectNoUnhandledRejection(() => {
+        void store.disconnectLive()
+      })
+
+      store.setSelectedSource('serial')
+      await expectNoUnhandledRejection(() => {
+        void store.activateSelectedSource()
+      })
     } finally {
       store.dispose()
     }

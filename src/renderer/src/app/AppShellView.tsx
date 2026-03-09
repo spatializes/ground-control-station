@@ -16,55 +16,83 @@ import { HudOverlay } from '../components/hud/HudOverlay'
 import { AltitudeProfilePanel } from '../components/panels/AltitudeProfilePanel'
 import { ConnectionPanel } from '../components/panels/ConnectionPanel'
 
+interface AppShellViewState {
+  load: {
+    state: 'idle' | 'loading' | 'ready' | 'error'
+    error: string
+  }
+  scene: {
+    frame: TelemetryFrame | null
+    activeSource: DataSourceKind
+    cameraLocked: boolean
+    theme: ThemeMode
+  }
+  replay: {
+    frames: TelemetryFrame[]
+    index: number
+    durationMs: number
+    progress: number
+    isPlaying: boolean
+    speedMultiplier: number
+  }
+  ui: {
+    isConnectionPanelOpen: boolean
+    isAltitudeProfileCollapsed: boolean
+    isWindPanelOpen: boolean
+  }
+  wind: {
+    config: WindConfig
+    label: string
+    enabled: boolean
+    mode: WindMode
+    modeBadge: 'SYN' | 'LIVE'
+    fetchState: WindFetchState
+    statusText: string
+  }
+  connection: {
+    status: ConnectionStatus
+    selectedSource: DataSourceKind
+    serialPorts: SerialPortInfo[]
+    serialPath: string
+    serialBaudRate: number
+    websocketUrl: string
+  }
+}
+
+interface AppShellViewActions {
+  source: {
+    setSelectedSource: (source: DataSourceKind) => void
+    activateSelectedSource: () => void
+    disconnectLive: () => void
+    refreshSerialPorts: () => void
+    setSerialPath: (path: string) => void
+    setSerialBaudRate: (baudRate: number) => void
+    setWebSocketUrl: (url: string) => void
+  }
+  wind: {
+    setEnabled: (enabled: boolean) => void
+    setMode: (mode: WindMode) => void
+    togglePanel: () => void
+    closePanel: () => void
+  }
+  replay: {
+    togglePlay: () => void
+    seekReplayProgress: (progress: number) => void
+    hoverScrubReplay: (progress: number) => void
+    setSpeedMultiplier: (speed: number) => void
+  }
+  ui: {
+    setTheme: (theme: ThemeMode) => void
+    toggleCameraLock: () => void
+    toggleConnectionPanel: () => void
+    closeConnectionPanel: () => void
+    toggleAltitudeProfile: () => void
+  }
+}
+
 interface AppShellViewProps {
-  loadState: 'idle' | 'loading' | 'ready' | 'error'
-  loadError: string
-  frame: TelemetryFrame | null
-  replayFrames: TelemetryFrame[]
-  replayIndex: number
-  replayDurationMs: number
-  replayProgress: number
-  isPlaying: boolean
-  speedMultiplier: number
-  activeSource: DataSourceKind
-  selectedSource: DataSourceKind
-  cameraLocked: boolean
-  theme: ThemeMode
-  isConnectionPanelOpen: boolean
-  isAltitudeProfileCollapsed: boolean
-  wind: WindConfig
-  windLabel: string
-  windEnabled: boolean
-  windMode: WindMode
-  windModeBadge: 'SYN' | 'LIVE'
-  windFetchState: WindFetchState
-  windStatusText: string
-  isWindPanelOpen: boolean
-  connectionStatus: ConnectionStatus
-  serialPorts: SerialPortInfo[]
-  serialPath: string
-  serialBaudRate: number
-  websocketUrl: string
-  onSelectedSourceChange: (source: DataSourceKind) => void
-  onActivateSource: () => void
-  onThemeChange: (theme: ThemeMode) => void
-  onCameraLockToggle: () => void
-  onConnectionPanelToggle: () => void
-  onConnectionPanelClose: () => void
-  onWindPanelToggle: () => void
-  onWindPanelClose: () => void
-  onWindEnabledChange: (enabled: boolean) => void
-  onWindModeChange: (mode: WindMode) => void
-  onAltitudeProfileToggle: () => void
-  onTogglePlay: () => void
-  onSeekReplay: (progress: number) => void
-  onHoverScrubReplay: (progress: number) => void
-  onSpeedChange: (speed: number) => void
-  onRefreshSerialPorts: () => void
-  onSerialPathChange: (path: string) => void
-  onSerialBaudRateChange: (baudRate: number) => void
-  onWebSocketUrlChange: (url: string) => void
-  onDisconnectSource: () => void
+  state: AppShellViewState
+  actions: AppShellViewActions
 }
 
 function sourceLabel(source: DataSourceKind): string {
@@ -79,59 +107,11 @@ function sourceLabel(source: DataSourceKind): string {
   return 'WebSocket MAVLink'
 }
 
-export function AppShellView({
-  loadState,
-  loadError,
-  frame,
-  replayFrames,
-  replayIndex,
-  replayDurationMs,
-  replayProgress,
-  isPlaying,
-  speedMultiplier,
-  activeSource,
-  selectedSource,
-  cameraLocked,
-  theme,
-  isConnectionPanelOpen,
-  isAltitudeProfileCollapsed,
-  wind,
-  windLabel,
-  windEnabled,
-  windMode,
-  windModeBadge,
-  windFetchState,
-  windStatusText,
-  isWindPanelOpen,
-  connectionStatus,
-  serialPorts,
-  serialPath,
-  serialBaudRate,
-  websocketUrl,
-  onSelectedSourceChange,
-  onActivateSource,
-  onThemeChange,
-  onCameraLockToggle,
-  onConnectionPanelToggle,
-  onConnectionPanelClose,
-  onWindPanelToggle,
-  onWindPanelClose,
-  onWindEnabledChange,
-  onWindModeChange,
-  onAltitudeProfileToggle,
-  onTogglePlay,
-  onSeekReplay,
-  onHoverScrubReplay,
-  onSpeedChange,
-  onRefreshSerialPorts,
-  onSerialPathChange,
-  onSerialBaudRateChange,
-  onWebSocketUrlChange,
-  onDisconnectSource
-}: AppShellViewProps) {
-  const currentReplayAltitudeM = replayFrames[replayIndex]?.altitudeM ?? null
+export function AppShellView({ state, actions }: AppShellViewProps) {
+  const { load, scene, replay, ui, wind, connection } = state
+  const currentReplayAltitudeM = replay.frames[replay.index]?.altitudeM ?? null
 
-  if (loadState === 'loading' || loadState === 'idle') {
+  if (load.state === 'loading' || load.state === 'idle') {
     return (
       <main className="loading-state">
         <h1>Ground Control Station</h1>
@@ -140,18 +120,24 @@ export function AppShellView({
     )
   }
 
-  if (loadState === 'error') {
+  if (load.state === 'error') {
     return (
       <main className="loading-state">
         <h1>Replay Load Failed</h1>
-        <p>{loadError}</p>
+        <p>{load.error}</p>
       </main>
     )
   }
 
   return (
     <main className="app-shell theme-surface">
-      <CesiumScene frame={frame} cameraLocked={cameraLocked} wind={wind} windEnabled={windEnabled} theme={theme} />
+      <CesiumScene
+        frame={scene.frame}
+        cameraLocked={scene.cameraLocked}
+        wind={wind.config}
+        windEnabled={wind.enabled}
+        theme={scene.theme}
+      />
 
       <header className="app-header">
         <div className="brand-block">
@@ -159,74 +145,74 @@ export function AppShellView({
         </div>
 
         <div className="header-actions">
-          <ThemeToggle theme={theme} onThemeChange={onThemeChange} />
-          <button type="button" className="ghost-btn source-btn" onClick={onConnectionPanelToggle}>
-            {isConnectionPanelOpen ? 'Hide Data Source' : 'Data Source'}
-            <span className={`status-pill status-${connectionStatus.state}`}>{sourceLabel(activeSource)}</span>
+          <ThemeToggle theme={scene.theme} onThemeChange={actions.ui.setTheme} />
+          <button type="button" className="ghost-btn source-btn" onClick={actions.ui.toggleConnectionPanel}>
+            {ui.isConnectionPanelOpen ? 'Hide Data Source' : 'Data Source'}
+            <span className={`status-pill status-${connection.status.state}`}>{sourceLabel(scene.activeSource)}</span>
           </button>
-          <button type="button" className="ghost-btn" onClick={onCameraLockToggle}>
-            {cameraLocked ? 'Unlock Camera' : 'Lock Camera'}
+          <button type="button" className="ghost-btn" onClick={actions.ui.toggleCameraLock}>
+            {scene.cameraLocked ? 'Unlock Camera' : 'Lock Camera'}
           </button>
           <WindControl
-            label={windLabel}
-            modeBadge={windModeBadge}
-            enabled={windEnabled}
-            mode={windMode}
-            fetchState={windFetchState}
-            statusText={windStatusText}
-            isOpen={isWindPanelOpen}
-            onTogglePanel={onWindPanelToggle}
-            onClosePanel={onWindPanelClose}
-            onEnabledChange={onWindEnabledChange}
-            onModeChange={onWindModeChange}
+            label={wind.label}
+            modeBadge={wind.modeBadge}
+            enabled={wind.enabled}
+            mode={wind.mode}
+            fetchState={wind.fetchState}
+            statusText={wind.statusText}
+            isOpen={ui.isWindPanelOpen}
+            onTogglePanel={actions.wind.togglePanel}
+            onClosePanel={actions.wind.closePanel}
+            onEnabledChange={actions.wind.setEnabled}
+            onModeChange={actions.wind.setMode}
           />
         </div>
       </header>
 
-      <HudOverlay frame={frame} />
+      <HudOverlay frame={scene.frame} />
 
-      {isConnectionPanelOpen ? (
+      {ui.isConnectionPanelOpen ? (
         <ConnectionPanel
-          status={connectionStatus}
-          activeSource={activeSource}
-          selectedSource={selectedSource}
-          serialPorts={serialPorts}
-          serialPath={serialPath}
-          serialBaudRate={serialBaudRate}
-          websocketUrl={websocketUrl}
-          onSelectedSourceChange={onSelectedSourceChange}
-          onRefreshSerialPorts={onRefreshSerialPorts}
-          onSerialPathChange={onSerialPathChange}
-          onSerialBaudRateChange={onSerialBaudRateChange}
-          onWebSocketUrlChange={onWebSocketUrlChange}
-          onActivateSource={onActivateSource}
-          onDisconnectSource={onDisconnectSource}
-          onClose={onConnectionPanelClose}
+          status={connection.status}
+          activeSource={scene.activeSource}
+          selectedSource={connection.selectedSource}
+          serialPorts={connection.serialPorts}
+          serialPath={connection.serialPath}
+          serialBaudRate={connection.serialBaudRate}
+          websocketUrl={connection.websocketUrl}
+          onSelectedSourceChange={actions.source.setSelectedSource}
+          onRefreshSerialPorts={actions.source.refreshSerialPorts}
+          onSerialPathChange={actions.source.setSerialPath}
+          onSerialBaudRateChange={actions.source.setSerialBaudRate}
+          onWebSocketUrlChange={actions.source.setWebSocketUrl}
+          onActivateSource={actions.source.activateSelectedSource}
+          onDisconnectSource={actions.source.disconnectLive}
+          onClose={actions.ui.closeConnectionPanel}
         />
       ) : null}
 
       <footer className="bottom-stack">
         <PlaybackBar
-          isPlaying={isPlaying}
-          activeSource={activeSource}
-          progress={replayProgress}
-          currentTimeMs={replayDurationMs * replayProgress}
-          durationMs={replayDurationMs}
-          speedMultiplier={speedMultiplier}
-          canPlay={replayFrames.length > 1}
-          onTogglePlay={onTogglePlay}
-          onSeekProgress={onSeekReplay}
-          onSpeedChange={onSpeedChange}
+          isPlaying={replay.isPlaying}
+          activeSource={scene.activeSource}
+          progress={replay.progress}
+          currentTimeMs={replay.durationMs * replay.progress}
+          durationMs={replay.durationMs}
+          speedMultiplier={replay.speedMultiplier}
+          canPlay={replay.frames.length > 1}
+          onTogglePlay={actions.replay.togglePlay}
+          onSeekProgress={actions.replay.seekReplayProgress}
+          onSpeedChange={actions.replay.setSpeedMultiplier}
         />
 
         <AltitudeProfilePanel
-          frames={replayFrames}
-          currentProgress={replayProgress}
+          frames={replay.frames}
+          currentProgress={replay.progress}
           currentAltitudeM={currentReplayAltitudeM}
-          isCollapsed={isAltitudeProfileCollapsed}
-          isInteractive={activeSource === 'csv'}
-          onToggleCollapsed={onAltitudeProfileToggle}
-          onHoverScrub={onHoverScrubReplay}
+          isCollapsed={ui.isAltitudeProfileCollapsed}
+          isInteractive={scene.activeSource === 'csv'}
+          onToggleCollapsed={actions.ui.toggleAltitudeProfile}
+          onHoverScrub={actions.replay.hoverScrubReplay}
         />
       </footer>
     </main>
