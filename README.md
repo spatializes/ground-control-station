@@ -19,6 +19,10 @@
   - Serial MAVLink (Pixhawk/915MHz telemetry)
   - Raw MAVLink over WebSocket
 
+## Demo Video
+
+[Watch the demo video (MP4)](https://github.com/spatializes/ground-control-station/raw/main/assets/drone-control-demo.mp4)
+
 ## How to Build
 
 ```bash
