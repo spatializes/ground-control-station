@@ -9,12 +9,8 @@ import {
   TELEMETRY_LIST_PORTS,
   TELEMETRY_STATUS_EVENT
 } from '@shared/ipc'
-import type {
-  ConnectionStatus,
-  SerialConnectOptions,
-  TelemetryFrame,
-  WebSocketConnectOptions
-} from '@shared/types'
+import type { ConnectionStatus, TelemetryFrame } from '@shared/types'
+import { createTelemetryIpcHandlers } from './ipc/telemetryHandlers'
 import { LiveTelemetryService } from './telemetry/LiveTelemetryService'
 
 const liveTelemetryService = new LiveTelemetryService()
@@ -143,33 +139,18 @@ function createWindow(): void {
 }
 
 function bindIpc(): void {
-  ipcMain.handle(TELEMETRY_LIST_PORTS, async (event) => {
-    setTelemetryReceiver(event.sender, TELEMETRY_LIST_PORTS)
-    return liveTelemetryService.listSerialPorts()
+  const handlers = createTelemetryIpcHandlers({
+    service: liveTelemetryService,
+    setTelemetryReceiver,
+    sendTelemetryStatus,
+    sendTelemetryFrame,
+    logTelemetryIpc
   })
 
-  ipcMain.handle(TELEMETRY_CONNECT_SERIAL, async (event, options: SerialConnectOptions) => {
-    setTelemetryReceiver(event.sender, TELEMETRY_CONNECT_SERIAL)
-    logTelemetryIpc('Serial connect requested', options)
-    await liveTelemetryService.connectSerial(options)
-    sendTelemetryStatus()
-    sendTelemetryFrame()
-  })
-
-  ipcMain.handle(TELEMETRY_CONNECT_WS, async (event, options: WebSocketConnectOptions) => {
-    setTelemetryReceiver(event.sender, TELEMETRY_CONNECT_WS)
-    logTelemetryIpc('WebSocket connect requested', options)
-    await liveTelemetryService.connectWebSocket(options)
-    sendTelemetryStatus()
-    sendTelemetryFrame()
-  })
-
-  ipcMain.handle(TELEMETRY_DISCONNECT, async (event) => {
-    setTelemetryReceiver(event.sender, TELEMETRY_DISCONNECT)
-    logTelemetryIpc('Live disconnect requested')
-    await liveTelemetryService.disconnect()
-    sendTelemetryStatus()
-  })
+  ipcMain.handle(TELEMETRY_LIST_PORTS, handlers.listPorts)
+  ipcMain.handle(TELEMETRY_CONNECT_SERIAL, handlers.connectSerial)
+  ipcMain.handle(TELEMETRY_CONNECT_WS, handlers.connectWebSocket)
+  ipcMain.handle(TELEMETRY_DISCONNECT, handlers.disconnect)
 
   liveTelemetryService.on('frame', (frame: TelemetryFrame) => {
     sendTelemetryFrame(frame)

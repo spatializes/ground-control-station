@@ -11,99 +11,15 @@ import {
 } from 'cesium'
 import type { TelemetryFrame } from '@shared/types'
 import { toCesiumOrientation } from '../../lib/telemetry/toCesiumOrientation'
-
-interface StabilizedPosition {
-  latitudeDeg: number
-  longitudeDeg: number
-  altitudeM: number
-}
-
-const EARTH_RADIUS_M = 6_371_000
-const LIVE_STATIONARY_SPEED_MPS = 0.8
-const LIVE_STATIONARY_DISTANCE_M = 1.6
-const LIVE_STATIONARY_HORIZONTAL_DEADBAND_M = 0.9
-const LIVE_MOVING_HORIZONTAL_DEADBAND_M = 0.2
-const LIVE_STATIONARY_ALTITUDE_DEADBAND_M = 0.9
-const LIVE_MOVING_ALTITUDE_DEADBAND_M = 0.25
-const LIVE_STATIONARY_POSITION_ALPHA = 0.22
-const LIVE_MOVING_POSITION_ALPHA = 0.5
-const LIVE_STATIONARY_ALTITUDE_ALPHA = 0.12
-const LIVE_MOVING_ALTITUDE_ALPHA = 0.36
-
-function toRadians(degrees: number): number {
-  return (degrees * Math.PI) / 180
-}
-
-function horizontalDistanceM(
-  latitudeStartDeg: number,
-  longitudeStartDeg: number,
-  latitudeEndDeg: number,
-  longitudeEndDeg: number
-): number {
-  const latitudeStartRad = toRadians(latitudeStartDeg)
-  const latitudeEndRad = toRadians(latitudeEndDeg)
-  const deltaLatitudeRad = toRadians(latitudeEndDeg - latitudeStartDeg)
-  const deltaLongitudeRad = toRadians(longitudeEndDeg - longitudeStartDeg)
-
-  const sinLatitude = Math.sin(deltaLatitudeRad / 2)
-  const sinLongitude = Math.sin(deltaLongitudeRad / 2)
-  const a =
-    sinLatitude * sinLatitude +
-    Math.cos(latitudeStartRad) * Math.cos(latitudeEndRad) * sinLongitude * sinLongitude
-
-  return EARTH_RADIUS_M * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)))
-}
-
-function lerp(currentValue: number, targetValue: number, alpha: number): number {
-  return currentValue + (targetValue - currentValue) * alpha
-}
-
-function stabilizeLivePosition(previous: StabilizedPosition | null, frame: TelemetryFrame): StabilizedPosition {
-  const raw: StabilizedPosition = {
-    latitudeDeg: frame.latitudeDeg,
-    longitudeDeg: frame.longitudeDeg,
-    altitudeM: frame.altitudeM
-  }
-
-  if (!previous) {
-    return raw
-  }
-
-  const horizontalDeltaM = horizontalDistanceM(
-    previous.latitudeDeg,
-    previous.longitudeDeg,
-    raw.latitudeDeg,
-    raw.longitudeDeg
-  )
-  const altitudeDeltaM = Math.abs(raw.altitudeM - previous.altitudeM)
-  const speedMps = Math.max(frame.gpsSpeedMps, frame.airspeedMps)
-  const isStationary = speedMps < LIVE_STATIONARY_SPEED_MPS && horizontalDeltaM < LIVE_STATIONARY_DISTANCE_M
-
-  const horizontalDeadbandM = isStationary
-    ? LIVE_STATIONARY_HORIZONTAL_DEADBAND_M
-    : LIVE_MOVING_HORIZONTAL_DEADBAND_M
-  const altitudeDeadbandM = isStationary
-    ? LIVE_STATIONARY_ALTITUDE_DEADBAND_M
-    : LIVE_MOVING_ALTITUDE_DEADBAND_M
-
-  const positionAlpha = isStationary ? LIVE_STATIONARY_POSITION_ALPHA : LIVE_MOVING_POSITION_ALPHA
-  const altitudeAlpha = isStationary ? LIVE_STATIONARY_ALTITUDE_ALPHA : LIVE_MOVING_ALTITUDE_ALPHA
-
-  const targetLatitudeDeg = horizontalDeltaM < horizontalDeadbandM ? previous.latitudeDeg : raw.latitudeDeg
-  const targetLongitudeDeg = horizontalDeltaM < horizontalDeadbandM ? previous.longitudeDeg : raw.longitudeDeg
-  const targetAltitudeM = altitudeDeltaM < altitudeDeadbandM ? previous.altitudeM : raw.altitudeM
-
-  return {
-    latitudeDeg: lerp(previous.latitudeDeg, targetLatitudeDeg, positionAlpha),
-    longitudeDeg: lerp(previous.longitudeDeg, targetLongitudeDeg, positionAlpha),
-    altitudeM: lerp(previous.altitudeM, targetAltitudeM, altitudeAlpha)
-  }
-}
+import {
+  stabilizeLivePosition,
+  type StabilizedLivePositionState
+} from '../../lib/telemetry/livePositionStabilizer'
 
 export function useAircraftEntity(viewer: Viewer | null, frame: TelemetryFrame | null): Entity | null {
   const [entity, setEntity] = useState<Entity | null>(null)
   const hasInitialFrameFocusRef = useRef(false)
-  const liveStabilizedPositionRef = useRef<StabilizedPosition | null>(null)
+  const liveStabilizedPositionRef = useRef<StabilizedLivePositionState | null>(null)
 
   useEffect(() => {
     if (!viewer) {
@@ -176,8 +92,17 @@ export function useAircraftEntity(viewer: Viewer | null, frame: TelemetryFrame |
       return
     }
 
+    const focusLatitudeDeg =
+      frame.source === 'live' ? liveStabilizedPositionRef.current?.latitudeDeg ?? frame.latitudeDeg : frame.latitudeDeg
+    const focusLongitudeDeg =
+      frame.source === 'live'
+        ? liveStabilizedPositionRef.current?.longitudeDeg ?? frame.longitudeDeg
+        : frame.longitudeDeg
+    const focusAltitudeM =
+      frame.source === 'live' ? liveStabilizedPositionRef.current?.altitudeM ?? frame.altitudeM : frame.altitudeM
+
     viewer.camera.flyTo({
-      destination: Cartesian3.fromDegrees(frame.longitudeDeg, frame.latitudeDeg, Math.max(350, frame.altitudeM + 900)),
+      destination: Cartesian3.fromDegrees(focusLongitudeDeg, focusLatitudeDeg, Math.max(350, focusAltitudeM + 900)),
       orientation: {
         heading: CesiumMath.toRadians(frame.yawDeg),
         pitch: CesiumMath.toRadians(-25),

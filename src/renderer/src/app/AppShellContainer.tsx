@@ -12,6 +12,7 @@ export const AppShellContainer = observer(function AppShellContainer() {
   useThemeClass(store.ui.theme)
 
   useEffect(() => {
+    store.start()
     void store.initializeReplay()
     void store.refreshSerialPorts()
 

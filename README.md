@@ -54,7 +54,7 @@ This setup is confirmed working on the team macOS dev machine for live telemetry
 - Hardware connected:
   - Pixhawk connected to Mac over USB (`/dev/cu.usbmodem2101`) for direct FC access.
   - USB telemetry radio connected to Mac (`/dev/cu.usbserial-0001`).
-  - Drone battery plugged in (required so the air telemetry radio is powered).
+  - Drone battery plugged in for normal vehicle power during bench/flight tests.
 - Ground Control Station Serial panel settings:
   - Port: `/dev/cu.usbserial-0001`
   - Baud: `57600`
@@ -63,4 +63,8 @@ This setup is confirmed working on the team macOS dev machine for live telemetry
 Notes:
 
 - For telemetry radio, use `/dev/cu.*` callout ports on macOS (not `/dev/tty.*`).
+- Port identity on this machine:
+  - `/dev/cu.usbserial-0001` = USB telemetry radio (CP2102).
+  - `/dev/cu.usbmodem2101` = direct Pixhawk USB.
+- Observed behavior: live telemetry can still stream on `/dev/cu.usbserial-0001` with battery unplugged if USB power is still powering Pixhawk/radio. Unplugging USB stops that stream.
 - You can be serial-connected but still have no GPS fix; this is expected indoors or before GPS lock.

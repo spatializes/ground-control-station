@@ -312,6 +312,10 @@ select:focus-visible {
   letter-spacing: 0.05em;
 }
 
+.hud-note-hidden {
+  visibility: hidden;
+}
+
 .connection-panel {
   position: absolute;
   right: 18px;

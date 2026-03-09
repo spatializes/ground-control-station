@@ -29,7 +29,9 @@ export function PositionCard({ latitudeDeg, longitudeDeg, hasPositionFix, satell
         <span>Sats</span>
         <strong>{formatSatellites(satellitesVisible)}</strong>
       </div>
-      {!hasPositionFix ? <span className="hud-note">No GPS fix</span> : null}
+      <span className={`hud-note${hasPositionFix ? ' hud-note-hidden' : ''}`} aria-hidden={hasPositionFix}>
+        No GPS fix
+      </span>
     </article>
   )
 }

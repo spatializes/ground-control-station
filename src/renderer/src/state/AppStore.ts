@@ -200,6 +200,7 @@ export class AppStore {
   private lastWindFetchAttemptMs = 0
   private connectionAttemptId = 0
   private hasLoggedFirstLiveFrame = false
+  private hasStarted = false
 
   constructor(options: AppStoreOptions = {}) {
     this.api = options.api ?? (typeof window === 'undefined' ? null : window.gcsApi ?? null)
@@ -209,6 +210,14 @@ export class AppStore {
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
 
     makeAutoObservable(this, {}, { autoBind: true })
+  }
+
+  start(): void {
+    if (this.hasStarted) {
+      return
+    }
+
+    this.hasStarted = true
     this.bindLiveListeners()
     this.startWindRefreshLoop()
   }
@@ -317,6 +326,7 @@ export class AppStore {
   }
 
   dispose(): void {
+    this.hasStarted = false
     this.pauseReplay()
     this.stopWindRefreshLoop()
     this.removeTelemetryListener?.()
