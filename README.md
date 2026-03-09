@@ -21,7 +21,7 @@
 
 ## Demo Video
 
-[Watch the demo video (MP4)](https://github.com/spatializes/ground-control-station/raw/main/assets/drone-control-demo.mp4)
+[Watch the demo video (MP4)](https://github.com/spatializes/ground-control-station/blob/main/assets/drone-control-demo.mp4)
 
 ## How to Build
 
