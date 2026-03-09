@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { GcsApi, TelemetryFrame, WindSnapshot } from '@shared/types'
 import { AppStore } from './AppStore'
+import { LIVE_TELEMETRY_STALE_TIMEOUT_MS } from './domains/LiveConnectionDomain'
 
 const FRAMES: TelemetryFrame[] = [
   {
@@ -28,6 +29,21 @@ const FRAMES: TelemetryFrame[] = [
     source: 'csv'
   }
 ]
+
+function createLiveFrame(timestampMs: number, altitudeM: number): TelemetryFrame {
+  return {
+    timestampMs,
+    latitudeDeg: 26.1,
+    longitudeDeg: -97.4,
+    altitudeM,
+    gpsSpeedMps: 15,
+    airspeedMps: 16,
+    pitchDeg: 1,
+    rollDeg: 2,
+    yawDeg: 3,
+    source: 'live'
+  }
+}
 
 async function waitForCondition(condition: () => boolean, timeoutMs = 500): Promise<void> {
   const startedAt = Date.now()
@@ -123,6 +139,68 @@ describe('AppStore playback integration', () => {
       expect(store.currentFrame).toBeNull()
     } finally {
       store.dispose()
+    }
+  })
+
+  it('keeps CSV altitude panel behavior unchanged', () => {
+    const store = new AppStore({ api: null })
+    try {
+      store.setReplayFrames(FRAMES)
+
+      const panel = store.altitudePanelModel
+      expect(panel.title).toBe('Altitude Profile')
+      expect(panel.xAxisLabel).toBe('Mission Time')
+      expect(panel.isInteractive).toBe(true)
+      expect(panel.frames).toBe(store.playback.frames)
+      expect(panel.currentProgress).toBe(store.replayProgress)
+      expect(panel.currentAltitudeM).toBe(FRAMES[0].altitudeM)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('uses live altitude history for altitude panel when live source is active', () => {
+    const store = new AppStore({ api: null })
+    try {
+      store.setReplayFrames(FRAMES)
+      store.setActiveSource('serial')
+
+      const liveFrameA = createLiveFrame(10_000, 140)
+      const liveFrameB = createLiveFrame(11_000, 148)
+      store.live.markLatestFrame(liveFrameA)
+      store.live.markLatestFrame(liveFrameB)
+
+      const panel = store.altitudePanelModel
+      expect(panel.title).toBe('Live Altitude Trend')
+      expect(panel.xAxisLabel).toBe('Recent Time')
+      expect(panel.isInteractive).toBe(false)
+      expect(panel.frames).toEqual([liveFrameA, liveFrameB])
+      expect(panel.currentProgress).toBe(1)
+      expect(panel.currentAltitudeM).toBe(148)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('returns live altitude panel to waiting state after telemetry goes stale', async () => {
+    vi.useFakeTimers()
+
+    const store = new AppStore({ api: null })
+    try {
+      store.setActiveSource('serial')
+      store.live.markLatestFrame(createLiveFrame(30_000, 170))
+      store.live.markLatestFrame(createLiveFrame(31_000, 172))
+      expect(store.altitudePanelModel.frames).toHaveLength(2)
+
+      await vi.advanceTimersByTimeAsync(LIVE_TELEMETRY_STALE_TIMEOUT_MS)
+
+      const panel = store.altitudePanelModel
+      expect(panel.frames).toHaveLength(0)
+      expect(panel.currentAltitudeM).toBeNull()
+      expect(panel.emptyMessage).toBe('Waiting for live telemetry...')
+    } finally {
+      store.dispose()
+      vi.useRealTimers()
     }
   })
 

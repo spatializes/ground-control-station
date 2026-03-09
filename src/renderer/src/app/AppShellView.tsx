@@ -35,6 +35,15 @@ interface AppShellViewState {
     isPlaying: boolean
     speedMultiplier: number
   }
+  altitudePanel: {
+    frames: TelemetryFrame[]
+    currentProgress: number
+    currentAltitudeM: number | null
+    isInteractive: boolean
+    title: string
+    xAxisLabel: string
+    emptyMessage: string
+  }
   ui: {
     isConnectionPanelOpen: boolean
     isAltitudeProfileCollapsed: boolean
@@ -108,8 +117,7 @@ function sourceLabel(source: DataSourceKind): string {
 }
 
 export function AppShellView({ state, actions }: AppShellViewProps) {
-  const { load, scene, replay, ui, wind, connection } = state
-  const currentReplayAltitudeM = replay.frames[replay.index]?.altitudeM ?? null
+  const { load, scene, replay, altitudePanel, ui, wind, connection } = state
 
   if (load.state === 'loading' || load.state === 'idle') {
     return (
@@ -206,11 +214,14 @@ export function AppShellView({ state, actions }: AppShellViewProps) {
         />
 
         <AltitudeProfilePanel
-          frames={replay.frames}
-          currentProgress={replay.progress}
-          currentAltitudeM={currentReplayAltitudeM}
+          frames={altitudePanel.frames}
+          currentProgress={altitudePanel.currentProgress}
+          currentAltitudeM={altitudePanel.currentAltitudeM}
           isCollapsed={ui.isAltitudeProfileCollapsed}
-          isInteractive={scene.activeSource === 'csv'}
+          isInteractive={altitudePanel.isInteractive}
+          title={altitudePanel.title}
+          xAxisLabel={altitudePanel.xAxisLabel}
+          emptyMessage={altitudePanel.emptyMessage}
           onToggleCollapsed={actions.ui.toggleAltitudeProfile}
           onHoverScrub={actions.replay.hoverScrubReplay}
         />

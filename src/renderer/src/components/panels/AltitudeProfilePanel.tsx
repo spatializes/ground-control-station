@@ -11,6 +11,9 @@ interface AltitudeProfilePanelProps {
   currentAltitudeM: number | null
   isCollapsed: boolean
   isInteractive: boolean
+  title: string
+  xAxisLabel: string
+  emptyMessage: string
   onToggleCollapsed: () => void
   onHoverScrub: (progress: number) => void
 }
@@ -53,6 +56,9 @@ export function AltitudeProfilePanel({
   currentAltitudeM,
   isCollapsed,
   isInteractive,
+  title,
+  xAxisLabel,
+  emptyMessage,
   onToggleCollapsed,
   onHoverScrub
 }: AltitudeProfilePanelProps) {
@@ -139,9 +145,9 @@ export function AltitudeProfilePanel({
   }))
 
   return (
-    <section className="altitude-panel" aria-label="Altitude profile">
+    <section className="altitude-panel" aria-label={title}>
       <div className="panel-header">
-        <h2>Altitude Profile</h2>
+        <h2>{title}</h2>
         <div className="altitude-controls">
           {profile ? (
             <div className="altitude-range">
@@ -201,7 +207,7 @@ export function AltitudeProfilePanel({
             ))}
 
             <text x={PLOT_MARGIN_LEFT + plotWidth / 2} y={PROFILE_HEIGHT - 4} className="altitude-axis-caption" textAnchor="middle">
-              Mission Time
+              {xAxisLabel}
             </text>
 
             <g transform={`translate(${PLOT_MARGIN_LEFT} ${PLOT_MARGIN_TOP})`}>
@@ -218,7 +224,7 @@ export function AltitudeProfilePanel({
           </svg>
         </div>
       ) : (
-        <p className="panel-help">Load replay data to display the altitude profile.</p>
+        <p className="panel-help">{emptyMessage}</p>
       )}
     </section>
   )

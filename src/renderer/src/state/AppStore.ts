@@ -30,6 +30,16 @@ interface AppStoreOptions {
   connectTimeoutMs?: number
 }
 
+export interface AltitudePanelModel {
+  frames: TelemetryFrame[]
+  currentProgress: number
+  currentAltitudeM: number | null
+  isInteractive: boolean
+  title: string
+  xAxisLabel: string
+  emptyMessage: string
+}
+
 export class AppStore {
   readonly playback = new PlaybackDomain()
   readonly ui = new UiDomain()
@@ -107,6 +117,32 @@ export class AppStore {
     return this.ui.activeSource === 'csv' && this.playback.frames.length > 1
   }
 
+  get altitudePanelModel(): AltitudePanelModel {
+    if (this.ui.activeSource === 'csv') {
+      return {
+        frames: this.playback.frames,
+        currentProgress: this.replayProgress,
+        currentAltitudeM: this.playback.frames[this.currentReplayIndex]?.altitudeM ?? null,
+        isInteractive: true,
+        title: 'Altitude Profile',
+        xAxisLabel: 'Mission Time',
+        emptyMessage: 'Load replay data to display the altitude profile.'
+      }
+    }
+
+    const hasUsableLiveHistory = this.live.latestFrame !== null && this.live.liveAltitudeHistory.length > 1
+
+    return {
+      frames: hasUsableLiveHistory ? this.live.liveAltitudeHistory : [],
+      currentProgress: 1,
+      currentAltitudeM: hasUsableLiveHistory ? this.live.latestFrame?.altitudeM ?? null : null,
+      isInteractive: false,
+      title: 'Live Altitude Trend',
+      xAxisLabel: 'Recent Time',
+      emptyMessage: 'Waiting for live telemetry...'
+    }
+  }
+
   get effectiveWind(): WindConfig {
     return this.wind.effectiveWind
   }
@@ -149,6 +185,7 @@ export class AppStore {
     this.removeTelemetryListener = null
     this.removeStatusListener?.()
     this.removeStatusListener = null
+    this.live.dispose()
   }
 
   setReplayFrames(frames: TelemetryFrame[]): void {
@@ -174,25 +211,23 @@ export class AppStore {
     if (this.ui.selectedSource === 'serial') {
       const attemptId = this.live.beginConnectionAttempt()
       this.setActiveSource('serial')
-      this.live.markLatestFrame(null)
       await this.connectSerial(attemptId)
       return
     }
 
     const attemptId = this.live.beginConnectionAttempt()
     this.setActiveSource('websocket')
-    this.live.markLatestFrame(null)
     await this.connectWebSocket(attemptId)
   }
 
   setActiveSource(source: DataSourceKind): void {
     this.ui.setActiveSource(source)
     if (source !== 'csv') {
+      this.live.resetLiveTelemetry()
       this.pauseReplay()
       return
     }
 
-    this.live.markLatestFrame(null)
     this.live.markDisconnected()
   }
 
@@ -532,7 +567,6 @@ export class AppStore {
   private async disconnectLiveByAttempt(attemptId: number): Promise<boolean> {
     if (!this.api) {
       this.ui.setActiveSource('csv')
-      this.live.markLatestFrame(null)
       this.live.markDisconnected()
       return true
     }
@@ -565,7 +599,6 @@ export class AppStore {
         return
       }
 
-      this.live.markLatestFrame(null)
       if (this.ui.activeSource !== 'csv') {
         this.ui.setActiveSource('csv')
       }

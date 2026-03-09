@@ -2,6 +2,8 @@ import { makeAutoObservable } from 'mobx'
 import type { ConnectionStatus, SerialPortInfo, TelemetryFrame } from '@shared/types'
 
 export const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
+export const LIVE_ALTITUDE_HISTORY_WINDOW_MS = 120_000
+export const LIVE_TELEMETRY_STALE_TIMEOUT_MS = 3_000
 
 function isBluetoothIncomingPath(path: string): boolean {
   return path.toLowerCase().includes('bluetooth-incoming-port')
@@ -94,6 +96,7 @@ export function createDisconnectedStatus(): ConnectionStatus {
 export class LiveConnectionDomain {
   connectionStatus: ConnectionStatus = createDisconnectedStatus()
   latestFrame: TelemetryFrame | null = null
+  liveAltitudeHistory: TelemetryFrame[] = []
   serialPorts: SerialPortInfo[] = []
   serialPath = ''
   serialBaudRate = 115200
@@ -101,6 +104,7 @@ export class LiveConnectionDomain {
 
   private connectionAttemptId = 0
   hasLoggedFirstLiveFrame = false
+  private staleTelemetryTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
     makeAutoObservable(this, {}, { autoBind: true })
@@ -109,6 +113,7 @@ export class LiveConnectionDomain {
   beginConnectionAttempt(): number {
     this.connectionAttemptId += 1
     this.hasLoggedFirstLiveFrame = false
+    this.resetLiveTelemetry()
     return this.connectionAttemptId
   }
 
@@ -121,15 +126,27 @@ export class LiveConnectionDomain {
   }
 
   markDisconnected(): void {
+    this.resetLiveTelemetry()
     this.connectionStatus = createDisconnectedStatus()
   }
 
   markLatestFrame(frame: TelemetryFrame | null): void {
+    if (!frame) {
+      this.resetLiveTelemetry()
+      return
+    }
+
     this.latestFrame = frame
+    this.appendLiveAltitudeFrame(frame)
+    this.armStaleTelemetryTimeout()
   }
 
   setConnectionStatus(status: ConnectionStatus): void {
     this.connectionStatus = status
+
+    if (status.state === 'disconnected' || status.state === 'error') {
+      this.resetLiveTelemetry()
+    }
   }
 
   setSerialPorts(ports: SerialPortInfo[]): void {
@@ -154,5 +171,46 @@ export class LiveConnectionDomain {
 
   setWebSocketUrl(url: string): void {
     this.websocketUrl = url
+  }
+
+  resetLiveTelemetry(): void {
+    this.clearStaleTelemetryTimeout()
+    this.latestFrame = null
+    this.liveAltitudeHistory = []
+  }
+
+  dispose(): void {
+    this.clearStaleTelemetryTimeout()
+  }
+
+  private appendLiveAltitudeFrame(frame: TelemetryFrame): void {
+    const oldestAllowedTimestampMs = frame.timestampMs - LIVE_ALTITUDE_HISTORY_WINDOW_MS
+    const nextHistory = [...this.liveAltitudeHistory, frame]
+
+    let firstVisibleIndex = 0
+    while (firstVisibleIndex < nextHistory.length && nextHistory[firstVisibleIndex].timestampMs < oldestAllowedTimestampMs) {
+      firstVisibleIndex += 1
+    }
+
+    this.liveAltitudeHistory = firstVisibleIndex === 0 ? nextHistory : nextHistory.slice(firstVisibleIndex)
+  }
+
+  private armStaleTelemetryTimeout(): void {
+    this.clearStaleTelemetryTimeout()
+
+    this.staleTelemetryTimer = setTimeout(() => {
+      this.staleTelemetryTimer = null
+      this.latestFrame = null
+      this.liveAltitudeHistory = []
+    }, LIVE_TELEMETRY_STALE_TIMEOUT_MS)
+  }
+
+  private clearStaleTelemetryTimeout(): void {
+    if (!this.staleTelemetryTimer) {
+      return
+    }
+
+    clearTimeout(this.staleTelemetryTimer)
+    this.staleTelemetryTimer = null
   }
 }

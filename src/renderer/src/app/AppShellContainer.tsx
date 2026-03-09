@@ -48,6 +48,7 @@ export const AppShellContainer = observer(function AppShellContainer() {
           isPlaying: store.playback.isPlaying,
           speedMultiplier: store.playback.speedMultiplier
         },
+        altitudePanel: store.altitudePanelModel,
         ui: {
           isConnectionPanelOpen: store.ui.isConnectionPanelOpen,
           isAltitudeProfileCollapsed: store.ui.isAltitudeProfileCollapsed,
