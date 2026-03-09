@@ -1,24 +1,35 @@
 interface PositionCardProps {
   latitudeDeg: number | null
   longitudeDeg: number | null
+  hasPositionFix: boolean
+  satellitesVisible: number | null
 }
 
 function formatCoordinate(value: number | null): string {
   return value === null ? '--' : value.toFixed(5)
 }
 
-export function PositionCard({ latitudeDeg, longitudeDeg }: PositionCardProps) {
+function formatSatellites(value: number | null): string {
+  return value === null ? '--' : value.toString()
+}
+
+export function PositionCard({ latitudeDeg, longitudeDeg, hasPositionFix, satellitesVisible }: PositionCardProps) {
   return (
     <article className="hud-card hud-card-position" aria-label="Position">
       <span className="hud-label">Position</span>
       <div className="position-row">
         <span>Lat</span>
-        <strong>{formatCoordinate(latitudeDeg)}</strong>
+        <strong>{hasPositionFix ? formatCoordinate(latitudeDeg) : '--'}</strong>
       </div>
       <div className="position-row">
         <span>Lon</span>
-        <strong>{formatCoordinate(longitudeDeg)}</strong>
+        <strong>{hasPositionFix ? formatCoordinate(longitudeDeg) : '--'}</strong>
       </div>
+      <div className="position-row">
+        <span>Sats</span>
+        <strong>{formatSatellites(satellitesVisible)}</strong>
+      </div>
+      {!hasPositionFix ? <span className="hud-note">No GPS fix</span> : null}
     </article>
   )
 }

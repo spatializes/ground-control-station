@@ -64,6 +64,7 @@ interface AppShellViewProps {
   onSerialPathChange: (path: string) => void
   onSerialBaudRateChange: (baudRate: number) => void
   onWebSocketUrlChange: (url: string) => void
+  onDisconnectSource: () => void
 }
 
 function sourceLabel(source: DataSourceKind): string {
@@ -125,7 +126,8 @@ export function AppShellView({
   onRefreshSerialPorts,
   onSerialPathChange,
   onSerialBaudRateChange,
-  onWebSocketUrlChange
+  onWebSocketUrlChange,
+  onDisconnectSource
 }: AppShellViewProps) {
   const currentReplayAltitudeM = replayFrames[replayIndex]?.altitudeM ?? null
 
@@ -198,6 +200,7 @@ export function AppShellView({
           onSerialBaudRateChange={onSerialBaudRateChange}
           onWebSocketUrlChange={onWebSocketUrlChange}
           onActivateSource={onActivateSource}
+          onDisconnectSource={onDisconnectSource}
           onClose={onConnectionPanelClose}
         />
       ) : null}

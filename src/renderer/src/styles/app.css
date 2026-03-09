@@ -305,6 +305,13 @@ select:focus-visible {
   font-size: 0.92rem;
 }
 
+.hud-note {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
 .connection-panel {
   position: absolute;
   right: 18px;
@@ -420,6 +427,13 @@ select:focus-visible {
   line-height: 1;
   font-size: 1.22rem;
   font-weight: 700;
+}
+
+.connection-link-health {
+  margin: -2px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
 }
 
 .connection-status-detail {

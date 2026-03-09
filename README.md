@@ -46,3 +46,21 @@ npm run typecheck
 npm run test
 npm run test:smoke
 ```
+
+## Known Working Serial Setup (macOS, Telemetry Radio)
+
+This setup is confirmed working on the team macOS dev machine for live telemetry via radio:
+
+- Hardware connected:
+  - Pixhawk connected to Mac over USB (`/dev/cu.usbmodem2101`) for direct FC access.
+  - USB telemetry radio connected to Mac (`/dev/cu.usbserial-0001`).
+  - Drone battery plugged in (required so the air telemetry radio is powered).
+- Ground Control Station Serial panel settings:
+  - Port: `/dev/cu.usbserial-0001`
+  - Baud: `57600`
+  - Source: `Serial`
+
+Notes:
+
+- For telemetry radio, use `/dev/cu.*` callout ports on macOS (not `/dev/tty.*`).
+- You can be serial-connected but still have no GPS fix; this is expected indoors or before GPS lock.

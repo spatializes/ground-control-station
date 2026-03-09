@@ -131,11 +131,67 @@ describe('AppStore playback integration', () => {
     }
   })
 
+  it('defaults serial USB connections to 115200 baud', () => {
+    const store = new AppStore({ api: null })
+    try {
+      expect(store.live.serialBaudRate).toBe(115200)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('refreshes serial ports before connecting so a newly attached USB device can be used', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => [{ path: '/dev/cu.usbmodem1201' }]),
+      connectSerial: vi.fn(async () => undefined),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => undefined),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      await store.connectSerial()
+
+      expect(api.listSerialPorts).toHaveBeenCalled()
+      expect(api.connectSerial).toHaveBeenCalledWith({
+        path: '/dev/cu.usbmodem1201',
+        baudRate: 115200
+      })
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('marks serial link connected when connect RPC resolves even if no status event arrives', async () => {
+    const api: GcsApi = {
+      listSerialPorts: vi.fn(async () => [{ path: '/dev/cu.usbmodem1201' }]),
+      connectSerial: vi.fn(async () => undefined),
+      connectWebSocket: vi.fn(async () => undefined),
+      disconnectLive: vi.fn(async () => undefined),
+      onLiveTelemetry: vi.fn(() => () => undefined),
+      onConnectionStatus: vi.fn(() => () => undefined)
+    }
+
+    const store = new AppStore({ api })
+    try {
+      await store.connectSerial()
+
+      expect(store.live.connectionStatus.state).toBe('connected')
+      expect(store.live.connectionStatus.transport).toBe('serial')
+      expect(store.live.connectionStatus.mavlinkState).toBe('none')
+      expect(store.live.connectionStatus.message).toContain('waiting for MAVLink packets')
+    } finally {
+      store.dispose()
+    }
+  })
+
   it('fails serial connection with timeout instead of hanging forever', async () => {
     vi.useFakeTimers()
 
     const api: GcsApi = {
-      listSerialPorts: vi.fn(async () => []),
+      listSerialPorts: vi.fn(async () => [{ path: 'COM4' }]),
       connectSerial: vi.fn(async () => new Promise<void>(() => undefined)),
       connectWebSocket: vi.fn(async () => undefined),
       disconnectLive: vi.fn(async () => undefined),
@@ -243,6 +299,47 @@ describe('AppStore playback integration', () => {
       nowMs += 46_000
       await store.refreshLiveWindForFrame(store.currentFrame, false)
       expect(windFetcher).toHaveBeenCalledTimes(2)
+    } finally {
+      store.dispose()
+    }
+  })
+
+  it('skips live wind fetches until position fix is available', async () => {
+    const windFetcher = vi.fn(async (): Promise<WindSnapshot> => {
+      return {
+        source: 'open-meteo',
+        fromDirectionDeg: 180,
+        speedMps: 8,
+        updatedAtMs: 1234
+      }
+    })
+
+    const store = new AppStore({
+      api: null,
+      windFetcher
+    })
+
+    try {
+      store.setWindMode('live')
+
+      await store.refreshLiveWindForFrame(
+        {
+          timestampMs: 1,
+          latitudeDeg: 0,
+          longitudeDeg: 0,
+          hasPositionFix: false,
+          altitudeM: 12,
+          gpsSpeedMps: 1,
+          airspeedMps: 2,
+          pitchDeg: 3,
+          rollDeg: 4,
+          yawDeg: 5,
+          source: 'live'
+        },
+        true
+      )
+
+      expect(windFetcher).not.toHaveBeenCalled()
     } finally {
       store.dispose()
     }

@@ -1,4 +1,4 @@
-import type { ChangeEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import type { ConnectionStatus, DataSourceKind, SerialPortInfo } from '@shared/types'
 
 interface ConnectionPanelProps {
@@ -15,8 +15,11 @@ interface ConnectionPanelProps {
   onSerialBaudRateChange: (baudRate: number) => void
   onWebSocketUrlChange: (url: string) => void
   onActivateSource: () => void
+  onDisconnectSource: () => void
   onClose: () => void
 }
+
+const COMMON_BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600] as const
 
 function sourceLabel(source: DataSourceKind): string {
   if (source === 'csv') {
@@ -28,6 +31,28 @@ function sourceLabel(source: DataSourceKind): string {
   }
 
   return 'WebSocket MAVLink'
+}
+
+function linkHealthLabel(status: ConnectionStatus): string | null {
+  if (status.state !== 'connected' || !status.transport) {
+    return null
+  }
+
+  const transportLabel = status.transport === 'serial' ? 'Serial' : 'WebSocket'
+
+  if (status.mavlinkState === 'none') {
+    return `${transportLabel}: connected, MAVLink not detected yet`
+  }
+
+  if (status.mavlinkState === 'packets') {
+    return `${transportLabel}: connected, MAVLink packets detected`
+  }
+
+  if (status.mavlinkState === 'telemetry') {
+    return `${transportLabel}: connected, MAVLink telemetry active`
+  }
+
+  return `${transportLabel}: connected`
 }
 
 export function ConnectionPanel({
@@ -44,16 +69,48 @@ export function ConnectionPanel({
   onSerialBaudRateChange,
   onWebSocketUrlChange,
   onActivateSource,
+  onDisconnectSource,
   onClose
 }: ConnectionPanelProps) {
+  const [serialBaudInput, setSerialBaudInput] = useState<string>(serialBaudRate.toString())
+
+  useEffect(() => {
+    setSerialBaudInput(serialBaudRate.toString())
+  }, [serialBaudRate])
+
   const handleSerialPathChange = (event: ChangeEvent<HTMLSelectElement>): void => {
     onSerialPathChange(event.target.value)
   }
 
+  const commitSerialBaudRate = (): void => {
+    const trimmed = serialBaudInput.trim()
+    if (!/^\d+$/.test(trimmed)) {
+      setSerialBaudInput(serialBaudRate.toString())
+      return
+    }
+
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setSerialBaudInput(serialBaudRate.toString())
+      return
+    }
+
+    onSerialBaudRateChange(parsed)
+    setSerialBaudInput(parsed.toString())
+  }
+
   const handleBaudRateChange = (event: ChangeEvent<HTMLInputElement>): void => {
-    const value = Number(event.target.value)
-    if (Number.isFinite(value)) {
-      onSerialBaudRateChange(value)
+    setSerialBaudInput(event.target.value)
+  }
+
+  const handleBaudRateBlur = (): void => {
+    commitSerialBaudRate()
+  }
+
+  const handleBaudRateKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commitSerialBaudRate()
     }
   }
 
@@ -66,12 +123,22 @@ export function ConnectionPanel({
     (selectedSource === 'serial' && serialPath.length > 0) ||
     (selectedSource === 'websocket' && websocketUrl.trim().length > 0)
 
+  const canDisconnect =
+    selectedSource !== 'csv' &&
+    activeSource === selectedSource &&
+    status.state !== 'disconnected'
+
   const activateLabel =
-    selectedSource === 'csv'
-      ? 'Use CSV Test Data'
-      : selectedSource === 'serial'
-        ? 'Connect Serial'
-        : 'Connect WebSocket'
+    canDisconnect
+      ? 'Disconnect'
+      : selectedSource === 'csv'
+        ? 'Use CSV Test Data'
+        : selectedSource === 'serial'
+          ? 'Connect Serial'
+          : 'Connect WebSocket'
+
+  const handlePrimaryAction = canDisconnect ? onDisconnectSource : onActivateSource
+  const linkHealth = linkHealthLabel(status)
 
   return (
     <aside className="connection-panel" aria-label="Data source controls">
@@ -141,7 +208,20 @@ export function ConnectionPanel({
 
           <label>
             Baud
-            <input type="number" value={serialBaudRate} min={1200} step={100} onChange={handleBaudRateChange} />
+            <input
+              type="text"
+              inputMode="numeric"
+              list="serial-baud-options"
+              value={serialBaudInput}
+              onChange={handleBaudRateChange}
+              onBlur={handleBaudRateBlur}
+              onKeyDown={handleBaudRateKeyDown}
+            />
+            <datalist id="serial-baud-options">
+              {COMMON_BAUD_RATES.map((baudRate) => (
+                <option key={baudRate} value={baudRate.toString()} />
+              ))}
+            </datalist>
           </label>
         </section>
       ) : null}
@@ -157,13 +237,15 @@ export function ConnectionPanel({
         </section>
       ) : null}
 
-      <button type="button" className="primary-btn" onClick={onActivateSource} disabled={!canActivate}>
+      <button type="button" className="primary-btn" onClick={handlePrimaryAction} disabled={!canDisconnect && !canActivate}>
         {activateLabel}
       </button>
 
       <div className="panel-footer-row">
         <span className={`status-pill status-${status.state}`}>{status.state}</span>
       </div>
+
+      {linkHealth ? <p className="connection-link-health">{linkHealth}</p> : null}
 
       {status.message ? (
         <p className={`connection-status-detail status-detail-${status.state}`}>

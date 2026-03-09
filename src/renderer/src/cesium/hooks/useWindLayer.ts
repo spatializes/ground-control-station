@@ -307,6 +307,11 @@ export function useWindLayer(
         return
       }
 
+      if (activeFrame.hasPositionFix === false) {
+        collection.show = false
+        return
+      }
+
       const overlayEnabled = enabledRef.current
       collection.show = overlayEnabled
       if (!overlayEnabled) {

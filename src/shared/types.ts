@@ -8,6 +8,8 @@ export interface TelemetryFrame {
   timestampMs: number
   latitudeDeg: number
   longitudeDeg: number
+  hasPositionFix?: boolean
+  satellitesVisible?: number
   altitudeM: number
   gpsSpeedMps: number
   airspeedMps: number
@@ -48,6 +50,7 @@ export interface WebSocketConnectOptions {
 export interface ConnectionStatus {
   state: 'disconnected' | 'connecting' | 'connected' | 'error'
   transport?: 'serial' | 'websocket'
+  mavlinkState?: 'none' | 'packets' | 'telemetry'
   message?: string
 }
 

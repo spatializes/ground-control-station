@@ -17,7 +17,12 @@ export function HudOverlay({ frame }: HudOverlayProps) {
       <AttitudeCard label="Pitch" valueDeg={frame?.pitchDeg ?? null} signed />
       <AttitudeCard label="Roll" valueDeg={frame?.rollDeg ?? null} signed />
       <AttitudeCard label="Yaw" valueDeg={frame?.yawDeg ?? null} />
-      <PositionCard latitudeDeg={frame?.latitudeDeg ?? null} longitudeDeg={frame?.longitudeDeg ?? null} />
+      <PositionCard
+        latitudeDeg={frame?.latitudeDeg ?? null}
+        longitudeDeg={frame?.longitudeDeg ?? null}
+        hasPositionFix={frame ? frame.hasPositionFix !== false : false}
+        satellitesVisible={frame?.satellitesVisible ?? null}
+      />
     </section>
   )
 }

@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import type { WebContents } from 'electron'
 import path from 'node:path'
 import {
   TELEMETRY_CONNECT_SERIAL,
@@ -9,6 +10,7 @@ import {
   TELEMETRY_STATUS_EVENT
 } from '@shared/ipc'
 import type {
+  ConnectionStatus,
   SerialConnectOptions,
   TelemetryFrame,
   WebSocketConnectOptions
@@ -17,6 +19,90 @@ import { LiveTelemetryService } from './telemetry/LiveTelemetryService'
 
 const liveTelemetryService = new LiveTelemetryService()
 let mainWindow: BrowserWindow | null = null
+let telemetryReceiver: WebContents | null = null
+let telemetryFrameBroadcastCount = 0
+
+function logTelemetryIpc(message: string, details?: unknown): void {
+  if (details === undefined) {
+    console.info(`[telemetry-ipc] ${message}`)
+    return
+  }
+
+  console.info(`[telemetry-ipc] ${message}`, details)
+}
+
+function setTelemetryReceiver(contents: WebContents, reason: string): void {
+  telemetryReceiver = contents
+  logTelemetryIpc(`Telemetry receiver set from ${reason}`, {
+    receiverId: contents.id,
+    mainWindowId: mainWindow?.webContents.id ?? null
+  })
+}
+
+function collectTelemetryReceivers(): WebContents[] {
+  const receivers: WebContents[] = []
+  const primaryWindowContents = mainWindow?.webContents ?? null
+
+  if (primaryWindowContents && !primaryWindowContents.isDestroyed()) {
+    receivers.push(primaryWindowContents)
+  }
+
+  if (telemetryReceiver && !telemetryReceiver.isDestroyed()) {
+    const alreadyPresent = receivers.some((candidate) => candidate.id === telemetryReceiver?.id)
+    if (!alreadyPresent) {
+      receivers.push(telemetryReceiver)
+    }
+  }
+
+  return receivers
+}
+
+function sendTelemetryStatus(statusOverride?: ConnectionStatus): void {
+  const status = statusOverride ?? liveTelemetryService.getConnectionStatus()
+  const receivers = collectTelemetryReceivers()
+
+  if (receivers.length === 0) {
+    logTelemetryIpc('No live receiver available for telemetry status', status)
+    return
+  }
+
+  for (const receiver of receivers) {
+    receiver.send(TELEMETRY_STATUS_EVENT, status)
+  }
+}
+
+function sendTelemetryFrame(frameOverride?: TelemetryFrame | null): void {
+  const frame = frameOverride ?? liveTelemetryService.getLatestFrame()
+  if (!frame) {
+    return
+  }
+
+  const receivers = collectTelemetryReceivers()
+  if (receivers.length === 0) {
+    logTelemetryIpc('No live receiver available for telemetry frame', {
+      latitudeDeg: frame.latitudeDeg,
+      longitudeDeg: frame.longitudeDeg,
+      hasPositionFix: frame.hasPositionFix
+    })
+    return
+  }
+
+  if (telemetryFrameBroadcastCount < 6) {
+    telemetryFrameBroadcastCount += 1
+    logTelemetryIpc('Broadcasting telemetry frame', {
+      broadcastCount: telemetryFrameBroadcastCount,
+      receiverIds: receivers.map((receiver) => receiver.id),
+      hasPositionFix: frame.hasPositionFix,
+      latitudeDeg: frame.latitudeDeg,
+      longitudeDeg: frame.longitudeDeg,
+      altitudeM: frame.altitudeM
+    })
+  }
+
+  for (const receiver of receivers) {
+    receiver.send(TELEMETRY_FRAME_EVENT, frame)
+  }
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -42,40 +128,55 @@ function createWindow(): void {
     void mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
+  mainWindow.webContents.on('console-message', (_event, _level, message) => {
+    if (message.includes('[live-ui]')) {
+      console.info(`[renderer-console] ${message}`)
+    }
+  })
+
   mainWindow.on('closed', () => {
+    if (telemetryReceiver && (telemetryReceiver.isDestroyed() || telemetryReceiver.id === mainWindow?.webContents.id)) {
+      telemetryReceiver = null
+    }
     mainWindow = null
   })
 }
 
 function bindIpc(): void {
-  ipcMain.handle(TELEMETRY_LIST_PORTS, async () => liveTelemetryService.listSerialPorts())
+  ipcMain.handle(TELEMETRY_LIST_PORTS, async (event) => {
+    setTelemetryReceiver(event.sender, TELEMETRY_LIST_PORTS)
+    return liveTelemetryService.listSerialPorts()
+  })
 
-  ipcMain.handle(TELEMETRY_CONNECT_SERIAL, async (_event, options: SerialConnectOptions) => {
+  ipcMain.handle(TELEMETRY_CONNECT_SERIAL, async (event, options: SerialConnectOptions) => {
+    setTelemetryReceiver(event.sender, TELEMETRY_CONNECT_SERIAL)
+    logTelemetryIpc('Serial connect requested', options)
     await liveTelemetryService.connectSerial(options)
+    sendTelemetryStatus()
+    sendTelemetryFrame()
   })
 
-  ipcMain.handle(TELEMETRY_CONNECT_WS, async (_event, options: WebSocketConnectOptions) => {
+  ipcMain.handle(TELEMETRY_CONNECT_WS, async (event, options: WebSocketConnectOptions) => {
+    setTelemetryReceiver(event.sender, TELEMETRY_CONNECT_WS)
+    logTelemetryIpc('WebSocket connect requested', options)
     await liveTelemetryService.connectWebSocket(options)
+    sendTelemetryStatus()
+    sendTelemetryFrame()
   })
 
-  ipcMain.handle(TELEMETRY_DISCONNECT, async () => {
+  ipcMain.handle(TELEMETRY_DISCONNECT, async (event) => {
+    setTelemetryReceiver(event.sender, TELEMETRY_DISCONNECT)
+    logTelemetryIpc('Live disconnect requested')
     await liveTelemetryService.disconnect()
+    sendTelemetryStatus()
   })
 
   liveTelemetryService.on('frame', (frame: TelemetryFrame) => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return
-    }
-
-    mainWindow.webContents.send(TELEMETRY_FRAME_EVENT, frame)
+    sendTelemetryFrame(frame)
   })
 
   liveTelemetryService.on('status', (status) => {
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      return
-    }
-
-    mainWindow.webContents.send(TELEMETRY_STATUS_EVENT, status)
+    sendTelemetryStatus(status)
   })
 }
 

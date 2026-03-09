@@ -84,6 +84,23 @@ const LIVE_WIND_REFRESH_INTERVAL_MS = 45_000
 const LIVE_WIND_REFRESH_DISTANCE_M = 2_000
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000
 
+function stringifyLogDetails(details: unknown): string {
+  if (details === undefined) {
+    return ''
+  }
+
+  try {
+    return JSON.stringify(details)
+  } catch {
+    return String(details)
+  }
+}
+
+function logLiveConnection(message: string, details?: unknown): void {
+  const detailsText = stringifyLogDetails(details)
+  console.info(detailsText.length > 0 ? `[live-ui] ${message} ${detailsText}` : `[live-ui] ${message}`)
+}
+
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unable to fetch live wind'
 }
@@ -153,7 +170,7 @@ export class AppStore {
     latestFrame: null as TelemetryFrame | null,
     serialPorts: [] as SerialPortInfo[],
     serialPath: '',
-    serialBaudRate: 57600,
+    serialBaudRate: 115200,
     websocketUrl: 'ws://127.0.0.1:14550'
   }
 
@@ -182,6 +199,7 @@ export class AppStore {
   private isWindFetchInFlight = false
   private lastWindFetchAttemptMs = 0
   private connectionAttemptId = 0
+  private hasLoggedFirstLiveFrame = false
 
   constructor(options: AppStoreOptions = {}) {
     this.api = options.api ?? (typeof window === 'undefined' ? null : window.gcsApi ?? null)
@@ -469,6 +487,10 @@ export class AppStore {
       return
     }
 
+    if (frame.hasPositionFix === false) {
+      return
+    }
+
     const nowMs = this.now()
     if (!force && !this.shouldRefreshLiveWind(frame, nowMs)) {
       return
@@ -535,16 +557,11 @@ export class AppStore {
   }
 
   async connectSerial(attemptId = this.beginConnectionAttempt()): Promise<void> {
-    if (!this.live.serialPath) {
-      if (this.isCurrentConnectionAttempt(attemptId)) {
-        this.live.connectionStatus = {
-          state: 'error',
-          transport: 'serial',
-          message: 'Select a serial port before connecting'
-        }
-      }
-      return
-    }
+    logLiveConnection('Starting serial connect attempt', {
+      attemptId,
+      selectedPath: this.live.serialPath,
+      baudRate: this.live.serialBaudRate
+    })
 
     if (!this.api) {
       if (this.isCurrentConnectionAttempt(attemptId)) {
@@ -557,21 +574,32 @@ export class AppStore {
       return
     }
 
-    if (this.isCurrentConnectionAttempt(attemptId)) {
-      runInAction(() => {
-        this.live.connectionStatus = {
-          state: 'connecting',
-          transport: 'serial',
-          message: `Opening ${this.live.serialPath} @ ${this.live.serialBaudRate}`
-        }
-      })
-    }
-
     try {
+      await this.refreshSerialPorts()
+
+      if (!this.live.serialPath) {
+        throw new Error('No serial ports detected. Plug the drone in over USB and try again.')
+      }
+
+      const path = this.live.serialPath
+      const baudRate = this.live.serialBaudRate
+
+      if (this.isCurrentConnectionAttempt(attemptId)) {
+        runInAction(() => {
+          this.live.connectionStatus = {
+            state: 'connecting',
+            transport: 'serial',
+            message: `Opening ${path} @ ${baudRate}`
+          }
+        })
+      }
+
+      logLiveConnection('Invoking serial connect RPC', { attemptId, path, baudRate })
+
       await withTimeout(
         this.api.connectSerial({
-          path: this.live.serialPath,
-          baudRate: this.live.serialBaudRate
+          path,
+          baudRate
         }),
         this.connectTimeoutMs,
         'Serial connection'
@@ -583,6 +611,22 @@ export class AppStore {
         }
 
         this.ui.activeSource = 'serial'
+
+        // Fallback when IPC status events are delayed or dropped.
+        if (this.live.connectionStatus.state === 'connecting') {
+          this.live.connectionStatus = {
+            state: 'connected',
+            transport: 'serial',
+            mavlinkState: 'none',
+            message: `Serial connected on ${path}; waiting for MAVLink packets`
+          }
+        }
+      })
+
+      logLiveConnection('Serial connect RPC resolved', {
+        attemptId,
+        path,
+        status: this.live.connectionStatus
       })
     } catch (error) {
       runInAction(() => {
@@ -595,6 +639,11 @@ export class AppStore {
           transport: 'serial',
           message: toErrorMessage(error, 'Unable to open serial connection')
         }
+      })
+
+      logLiveConnection('Serial connect failed', {
+        attemptId,
+        error: toErrorMessage(error, 'Unable to open serial connection')
       })
     }
   }
@@ -633,6 +682,8 @@ export class AppStore {
       })
     }
 
+    logLiveConnection('Invoking WebSocket connect RPC', { attemptId, websocketUrl })
+
     try {
       await withTimeout(
         this.api.connectWebSocket({
@@ -648,6 +699,22 @@ export class AppStore {
         }
 
         this.ui.activeSource = 'websocket'
+
+        // Fallback when IPC status events are delayed or dropped.
+        if (this.live.connectionStatus.state === 'connecting') {
+          this.live.connectionStatus = {
+            state: 'connected',
+            transport: 'websocket',
+            mavlinkState: 'none',
+            message: `WebSocket connected to ${websocketUrl}; waiting for MAVLink packets`
+          }
+        }
+      })
+
+      logLiveConnection('WebSocket connect RPC resolved', {
+        attemptId,
+        websocketUrl,
+        status: this.live.connectionStatus
       })
     } catch (error) {
       runInAction(() => {
@@ -660,6 +727,11 @@ export class AppStore {
           transport: 'websocket',
           message: toErrorMessage(error, 'Unable to open WebSocket connection')
         }
+      })
+
+      logLiveConnection('WebSocket connect failed', {
+        attemptId,
+        error: toErrorMessage(error, 'Unable to open WebSocket connection')
       })
     }
   }
@@ -743,10 +815,26 @@ export class AppStore {
         this.live.latestFrame = frame
       })
 
+      if (!this.hasLoggedFirstLiveFrame) {
+        this.hasLoggedFirstLiveFrame = true
+        logLiveConnection('Received first live frame in renderer', {
+          source: this.ui.activeSource,
+          hasPositionFix: frame.hasPositionFix !== false,
+          latitudeDeg: frame.latitudeDeg,
+          longitudeDeg: frame.longitudeDeg,
+          altitudeM: frame.altitudeM
+        })
+      }
+
       void this.refreshLiveWindForFrame(frame, false)
     })
 
     this.removeStatusListener = this.api.onConnectionStatus((status) => {
+      logLiveConnection('Received connection status event', {
+        activeSource: this.ui.activeSource,
+        status
+      })
+
       runInAction(() => {
         if (this.ui.activeSource === 'csv') {
           if (status.state === 'disconnected') {
@@ -758,6 +846,10 @@ export class AppStore {
         }
 
         if (status.transport && status.transport !== this.ui.activeSource && status.state !== 'disconnected') {
+          logLiveConnection('Ignoring status event for inactive source', {
+            activeSource: this.ui.activeSource,
+            status
+          })
           return
         }
 
@@ -768,6 +860,7 @@ export class AppStore {
 
   private beginConnectionAttempt(): number {
     this.connectionAttemptId += 1
+    this.hasLoggedFirstLiveFrame = false
     return this.connectionAttemptId
   }
 
